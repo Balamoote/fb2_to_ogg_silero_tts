@@ -1,0 +1,100 @@
+# =============================================================================
+# Модели
+# Варианты ru: v5_cis_base_nostress (рекомендуется), v5_cis_base, v5_cis_ext
+# Варианты en: v3_en, v3_en_indic, v3_de
+# =============================================================================
+ru_model: "v5_cis_base_nostress"
+en_model: "v3_en"
+
+# =============================================================================
+# Голоса
+# Русские голоса:
+# v5_cis_base_nostress (null = автоопределение)
+# Мужские:
+#   +ru_alexandr ~ru_bogdan -ru_dmitriy -ru_gamat -ru_igor -ru_marat +ru_roman -ru_eduard -ru_kejilgan
+#   +ru_miyau ~ru_safarhuja -ru_sibday
+# Женские:
+#   ru_aigul ru_albina ru_alfia ru_alfia2 ru_ekaterina ru_vika ru_karina ru_kermen
+#   ru_nurgul ru_oksana ru_onaoy ru_ramilia ru_saida ru_zara ru_zhadyra ru_zhazira ru_zinaida
+# Для английского: en_0 ... en_117, random
+# Для немецкого  : de_0 ... de_117, random
+# =============================================================================
+ru_speaker: "ru_roman"
+service_speaker: "ru_albina"
+en_speaker: "en_5"
+emphasis_speaker: null # null = основной голос -- для курсива
+
+# =============================================================================
+# Аудио
+# Частота: 24000, 48000
+# Формат выходного файла: ogg или wav
+# Устройство для вычислений: auto, cuda, cpu
+# Целевая громкость в LUFS: -23.0 для аудиокниг, -16.0 для подкастов (null = не нормализовать)
+# =============================================================================
+sample_rate: 48000
+format: "ogg"
+device: "auto"
+loudness_target: -23.0
+
+# =============================================================================
+# Скорость
+# =============================================================================
+speed: 1.00 # основная
+emphasis_speed: 0.80 # для курсива
+en_speed: 0.80 # для английского
+
+# =============================================================================
+# Паузы
+# =============================================================================
+pause_between_sentences: 0.15
+pause_semicolon: 0.1 # после ;
+pause_colon: 0.07 # после :
+pause_between_paragraphs: 0.25
+pause_between_chapters: 1.5
+emphasis_pause_before: 0.1
+emphasis_pause_after: 0.1
+en_pause_before: 0.1
+en_pause_after: 0.1
+
+# =============================================================================
+# Текст служебных фраз
+# =============================================================================
+footnote_prefix: "Сно́ска"
+footnote_suffix: "Коне́ц сно́ски"
+final_phrase: "Коне́ц озву́ченного те́кста."
+
+# =============================================================================
+# Производительность
+# Число потоков PyTorch на CPU (1 = без параллелизации, рекомендуется 1-4)
+# Максимальная длина текста: Silero падает на чанках длиннее ~1000 символов.
+# Количество блоков (абзацев) в одной аудио-части при потоковой обработке
+# части затем склеиваются через ffmpeg без перекодирования.
+# =============================================================================
+parallel_threads: 4
+max_chunk_length: 950
+blocks_per_part: 100
+filter_threads: 4  # потоков для аудиофильтров ffmpeg
+
+# Постобработка аудио через ffmpeg (null = без обработки)
+# Примеры:
+#   Смягчение высоких: "equalizer=f=4000:t=q:w=1:g=-3, equalizer=f=8000:t=q:w=2:g=-4"
+#   Компрессор: "acompressor=ratio=2:threshold=-20dB:attack=5:release=50"
+#   Обрезка частот: "highpass=f=80, lowpass=f=12000"
+vorbis_quality: 6
+
+#ffmpeg_filter: null
+
+# Мягкий фильтр
+ffmpeg_filter: "highpass=f=60, lowpass=f=14000, acompressor=ratio=2:threshold=-24dB:attack=10:release=100"
+
+# Эквалайзер
+#ffmpeg_filter: "equalizer=f=4000:t=q:w=1:g=-3, equalizer=f=8000:t=q:w=2:g=-5, equalizer=f=12000:t=q:w=3:g=-6"
+
+# Смягчение высоких + лёгкий реверб:
+#ffmpeg_filter: "highpass=f=60, lowpass=f=12000, aecho=0.8:0.6:20:0.3"
+
+# Только тембр (без компрессии):
+#ffmpeg_filter: "treble=g=-2:f=4000, treble=g=-4:f=8000, bass=g=1:f=200"
+
+# Лёгкое насыщение (ламповость):
+#ffmpeg_filter: "highpass=f=60, lowpass=f=13000, acompressor=ratio=1.5:threshold=-20dB:attack=8:release=80, bass=g=1.5:f=150"
