@@ -11,7 +11,7 @@ from pathlib import Path
 
 # Константы из основного модуля
 COMBINING_DIACRITICAL = "\u0300-\u036f"
-RUSSIAN_CHAR = f"[а-яё{COMBINING_DIACRITICAL}]"
+RUSSIAN_CHAR = f"[а-яёА-ЯЁ{COMBINING_DIACRITICAL}]"
 TAG_EN_OPEN = "<tts_en>"
 TAG_EN_CLOSE = "</tts_en>"
 PROTECT_MARKER_PREFIX = "ЪЪЪьЪЪЪ"

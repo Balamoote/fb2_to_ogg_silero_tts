@@ -13,7 +13,7 @@ TTS конвертер FB2 в аудио (OGG/WAV) с поддержкой сн�
   python normalize_fb2.py book.fb2
 """
 
-VERSION = "3.0.2"
+VERSION = "1.0.0"
 
 import argparse
 import gc

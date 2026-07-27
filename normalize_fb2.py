@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 Нормализация FB2 текста перед синтезом речи.
-Версия: 3.5.0 (модульная)
+Версия: 1.0.0 (модульная)
 
 Использование:
   python normalize_fb2.py book.fb2
 """
 
-VERSION = "3.5.0"
+VERSION = "1.0.0"
 
 import argparse
 import hashlib
