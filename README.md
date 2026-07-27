@@ -52,7 +52,7 @@ uv pip install regex
 uv pip install torch torchaudio silero-tts numpy pyyaml
 
 # Системная зависимость
-sudo apt install ffmpeg
+sudo apt install ffmpeg или winget install Gyan.FFmpeg и т.д. в зависимости от системы
 ```
 
 ## Использование
