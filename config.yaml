@@ -21,7 +21,7 @@ en_model: "v3_en"
 # =============================================================================
 ru_speaker: "ru_roman"
 service_speaker: "ru_albina"
-en_speaker: "en_5"
+en_speaker: "en_102"
 emphasis_speaker: null # null = основной голос -- для курсива
 
 # =============================================================================
@@ -40,8 +40,8 @@ loudness_target: -23.0
 # Скорость
 # =============================================================================
 speed: 1.00 # основная
-emphasis_speed: 0.80 # для курсива
-en_speed: 0.80 # для английского
+emphasis_speed: 0.90 # для курсива
+en_speed: 0.90 # для английского
 
 # =============================================================================
 # Паузы
@@ -73,19 +73,42 @@ final_phrase: "Коне́ц озву́ченного те́кста."
 parallel_threads: 4
 max_chunk_length: 950
 blocks_per_part: 100
-filter_threads: 4  # потоков для аудиофильтров ffmpeg
+filter_threads: 4 # потоков для аудиофильтров ffmpeg
 
-# Постобработка аудио через ffmpeg (null = без обработки)
+# Обработка звука через pedalboard (или pedalboard или ffmpeg_filter)
+# Постобработка pedalboard
+pedalboard_enabled: true
+pedalboard_room_tone: -48
+pb_highpass_hz: 85
+pb_deharsh_hz: 5500
+pb_deharsh_db: -2.5
+pb_deharsh2_hz: 7800
+pb_deharsh2_db: -3.0
+pb_lowpass_hz: 11500
+pb_warmth_hz: 280
+pb_warmth_db: 1.8
+pb_clarity_hz: 3200
+pb_clarity_db: 1.4
+pb_comp_threshold: -18
+pb_comp_ratio: 2.4
+pb_comp_attack: 18
+pb_comp_release: 120
+pb_reverb_room: 0.22
+pb_reverb_damping: 0.55
+pb_reverb_wet: 0.09
+pb_reverb_width: 0.6
+pb_gain_db: 0.3
+
+# Постобработка аудио через ffmpeg (null = без обработки) (или pedalboard или ffmpeg_filter)
 # Примеры:
 #   Смягчение высоких: "equalizer=f=4000:t=q:w=1:g=-3, equalizer=f=8000:t=q:w=2:g=-4"
 #   Компрессор: "acompressor=ratio=2:threshold=-20dB:attack=5:release=50"
 #   Обрезка частот: "highpass=f=80, lowpass=f=12000"
 vorbis_quality: 6
 
-#ffmpeg_filter: null
-
+ffmpeg_filter: null
 # Мягкий фильтр
-ffmpeg_filter: "highpass=f=60, lowpass=f=14000, acompressor=ratio=2:threshold=-24dB:attack=10:release=100"
+#ffmpeg_filter: "highpass=f=60, lowpass=f=14000, acompressor=ratio=2:threshold=-24dB:attack=10:release=100"
 
 # Эквалайзер
 #ffmpeg_filter: "equalizer=f=4000:t=q:w=1:g=-3, equalizer=f=8000:t=q:w=2:g=-5, equalizer=f=12000:t=q:w=3:g=-6"

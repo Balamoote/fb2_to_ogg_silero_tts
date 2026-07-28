@@ -81,6 +81,28 @@ DEFAULT_CONFIG = {
     "ffmpeg_filter": None,
     "vorbis_quality": 6,  # при ffmpeg_filter: битрейт opus = vorbis_quality * 32 kbps
     "filter_threads": 4,  # потоков для аудиофильтров ffmpeg
+    # Постобработка pedalboard (рекомендуется)
+    "pedalboard_enabled": False,
+    "pedalboard_room_tone": -48,      # уровень комнатного шума dB (0 = выкл)
+    "pb_highpass_hz": 85,             # обрезка инфраниза
+    "pb_lowpass_hz": 11500,           # обрезка высоких (песок)
+    "pb_warmth_hz": 280,              # частота "тепла"
+    "pb_warmth_db": 1.8,              # усиление тепла
+    "pb_clarity_hz": 3200,            # частота ясности
+    "pb_clarity_db": 1.4,             # усиление ясности
+    "pb_comp_threshold": -18,         # порог компрессора dB
+    "pb_comp_ratio": 2.4,             # ratio компрессора
+    "pb_comp_attack": 18,             # атака компрессора ms
+    "pb_comp_release": 120,           # релиз компрессора ms
+    "pb_reverb_room": 0.22,           # размер комнаты (0-1)
+    "pb_reverb_damping": 0.55,        # damping реверба (0-1)
+    "pb_reverb_wet": 0.09,            # уровень wet реверба (0-1)
+    "pb_reverb_width": 0.6,           # ширина реверба (0-1)
+    "pb_gain_db": 0.3,                # финальный гейн dB
+    "pb_deharsh_hz": 5500,            # частота подавления резонансов
+    "pb_deharsh_db": -2.5,            # ослабление резонансов dB
+    "pb_deharsh2_hz": 7800,           # вторая частота подавления
+    "pb_deharsh2_db": -3.0,           # ослабление dB
 }
 
 STRESS_MARK = "\u0301"
@@ -236,6 +258,7 @@ class TextCleaner:
             "\u00ab": '"', "\u00bb": '"',
             "&nbsp;": " ", "&mdash;": "-", "&laquo;": '"', "&raquo;": '"',
             "&amp;": "&", "&lt;": "<", "&gt;": ">",
+            "//": " ", "/*": " ", "*/": " ",  # убираем шипящие комбинации
         }
         for old, new in replacements.items():
             text = text.replace(old, new)
@@ -828,6 +851,53 @@ class TTSProcessor:
 
         return result_audio
 
+    def _apply_pedalboard(self, audio: np.ndarray) -> np.ndarray:
+        """Постобработка через pedalboard: компрессор + эквалайзер + реверб + комнатный шум."""
+        try:
+            from pedalboard import Pedalboard, HighpassFilter, LowpassFilter, PeakFilter, Compressor, Reverb, Gain
+            from scipy import signal as scipy_signal
+        except ImportError:
+            logger.warning("pedalboard или scipy не установлены. pip install pedalboard scipy")
+            return audio
+        cfg = self.config
+        try:
+            board = Pedalboard([
+                HighpassFilter(cutoff_frequency_hz=cfg.get("pb_highpass_hz", 85)),
+                PeakFilter(cutoff_frequency_hz=cfg.get("pb_deharsh_hz", 5500), gain_db=cfg.get("pb_deharsh_db", -2.5), q=2.0),
+                PeakFilter(cutoff_frequency_hz=cfg.get("pb_deharsh2_hz", 7800), gain_db=cfg.get("pb_deharsh2_db", -3.0), q=2.0),
+                LowpassFilter(cutoff_frequency_hz=cfg.get("pb_lowpass_hz", 11500)),
+                PeakFilter(cutoff_frequency_hz=cfg.get("pb_warmth_hz", 280), gain_db=cfg.get("pb_warmth_db", 1.8), q=0.9),
+                PeakFilter(cutoff_frequency_hz=cfg.get("pb_clarity_hz", 3200), gain_db=cfg.get("pb_clarity_db", 1.4), q=1.1),
+                Compressor(
+                    threshold_db=cfg.get("pb_comp_threshold", -18),
+                    ratio=cfg.get("pb_comp_ratio", 2.4),
+                    attack_ms=cfg.get("pb_comp_attack", 18),
+                    release_ms=cfg.get("pb_comp_release", 120),
+                ),
+                Reverb(
+                    room_size=cfg.get("pb_reverb_room", 0.22),
+                    damping=cfg.get("pb_reverb_damping", 0.55),
+                    wet_level=cfg.get("pb_reverb_wet", 0.09),
+                    dry_level=1.0 - cfg.get("pb_reverb_wet", 0.09),
+                    width=cfg.get("pb_reverb_width", 0.6),
+                ),
+                Gain(gain_db=cfg.get("pb_gain_db", 0.3)),
+            ])
+            processed = board(audio[np.newaxis, :], self.sample_rate)
+            result = processed[0]
+            room_level = cfg.get("pedalboard_room_tone", 0)
+            if room_level < 0:
+                white = np.random.randn(len(result)).astype(np.float32)
+                b = [0.049922035, -0.095993537, 0.050612699, -0.004408786]
+                a = [1, -2.494956002, 2.017265875, -0.522189400]
+                pink = scipy_signal.lfilter(b, a, white)
+                pink = pink / (np.max(np.abs(pink)) + 1e-10) * (10 ** (room_level / 20))
+                result = result + pink.astype(np.float32)
+            return result.astype(np.float32)
+        except Exception as e:
+            logger.warning(f"Pedalboard error: {e}")
+            return audio
+
 class FB2ToAudioConverter:
     """Основной конвертер FB2 в аудио."""
 
@@ -893,6 +963,8 @@ class FB2ToAudioConverter:
                     non_empty_parts = [p for p in part_audio_parts if len(p) > 0]
                     if non_empty_parts:
                         part_audio = np.concatenate(non_empty_parts)
+                        if self.config.get("pedalboard_enabled"):
+                            part_audio = self.tts._apply_pedalboard(part_audio)
                         part_file = work_path / f"part_{part_idx + 1:04d}.ogg"
                         if save_audio(part_audio, str(part_file), self.sample_rate):
                             part_files.append(part_file)

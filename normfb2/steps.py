@@ -617,6 +617,15 @@ def normalize_language_tags(text: str, acro_dict) -> str:
         r'((?:[a-zA-Z]{1,}[\s.,;:!?/&\-–—«»"\'()]*)+)'
         r'(?![а-яё' + COMBINING_DIACRITICAL + r'\w])'
     )
+    # Английские названия букв (без ударений, для чистого английского)
+    EN_LETTER_NAMES = {
+        'A': 'ay', 'B': 'bee', 'C': 'see', 'D': 'dee', 'E': 'ee',
+        'F': 'ef', 'G': 'jee', 'H': 'aitch', 'I': 'eye', 'J': 'jay',
+        'K': 'kay', 'L': 'el', 'M': 'em', 'N': 'en', 'O': 'oh',
+        'P': 'pee', 'Q': 'cue', 'R': 'ar', 'S': 'ess', 'T': 'tee',
+        'U': 'you', 'V': 'vee', 'W': 'double you', 'X': 'ex',
+        'Y': 'wy', 'Z': 'zed',
+    }
     
     def process_block(m):
         block = m.group(1).rstrip()
@@ -625,9 +634,22 @@ def normalize_language_tags(text: str, acro_dict) -> str:
         # Проверяем, есть ли хоть одно слово из 3+ букв
         if not re.search(r'[a-zA-Z]{3,}', block):
             return m.group(0)
-        # Обрабатываем аббревиатуры внутри блока
-        words = re.findall(r'\b[A-Z]{2,}\b', block)
         processed = block
+        
+        # Транслитерация инициалов с точкой: V. → vee, L. → el (кроме A. и I.)
+        processed = re.sub(
+            r'\b([B-DF-HJ-NP-TV-Z])\.',
+            lambda m: EN_LETTER_NAMES.get(m.group(1), m.group(1).lower()),
+            processed
+        )
+        # Одиночные заглавные буквы без точки (кроме A и I)
+        processed = re.sub(
+            r'\b([B-DF-HJ-NP-TV-Z])\b',
+            lambda m: EN_LETTER_NAMES.get(m.group(1), m.group(1).lower()),
+            processed
+        )
+        # Обрабатываем аббревиатуры внутри блока
+        words = re.findall(r'[A-Z]{2,}', block)
         for word in words:
             pron = acro_dict.get_pronunciation(word, "en")
             if pron:

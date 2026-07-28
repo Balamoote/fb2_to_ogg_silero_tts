@@ -51,7 +51,10 @@ uv pip install regex
 # Зависимости для озвучки (добавить при необходимости)
 uv pip install torch torchaudio silero-tts numpy pyyaml
 
-# Системная зависимость
+# Для обработки звука можно установить и включить в конфиге
+pip install pedalboard scipy
+
+# Системная зависимость (альтенатива для pedalboard)
 sudo apt install ffmpeg
 `или`
 winget install -e --id Gyan.FFmpeg
