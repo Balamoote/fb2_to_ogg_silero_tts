@@ -168,6 +168,24 @@ class AcronymDict:
             self.rulers = self._parse_rulers_file(rulers_path)
         else:
             self._create_default_rulers_dict()
+        self._compile_regex_dict()
+
+    def _compile_regex_dict(self):
+        """Компилирует все regex-паттерны для ускорения."""
+        import regex as re
+        self._regex_compiled = []
+        for pattern, replacement in self.regex_dict.items():
+            try:
+                p = pattern
+                lb = r'(?<![а-яё\w\u0301\u0300-\u036f])'
+                la = r'(?![а-яё\w\u0301\u0300-\u036f])'
+                if p.startswith('\\b'):
+                    p = lb + p[2:]
+                if p.endswith('\\b'):
+                    p = p[:-2] + la
+                self._regex_compiled.append((re.compile(p), replacement))
+            except re.error:
+                pass
 
     def _create_default_ru_dict(self):
         self.acro_ru = {"ВВС": "", "СВТ": "эс вэ тэ", "НКВД": "эн ка вэ дэ", "СМЕРШ": "сме́рш"}

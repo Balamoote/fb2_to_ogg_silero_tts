@@ -11,8 +11,8 @@ en_model: "v3_en"
 # Русские голоса:
 # v5_cis_base_nostress (null = автоопределение)
 # Мужские:
-#   +ru_alexandr ~ru_bogdan -ru_dmitriy -ru_gamat -ru_igor -ru_marat +ru_roman -ru_eduard -ru_kejilgan
-#   +ru_miyau ~ru_safarhuja -ru_sibday
+#   ru_roman ru_alexandr ru_miyau ru_bogdan ru_safarhuja  # В порядке качества
+#   ru_dmitriy ru_gamat ru_igor ru_marat ru_eduard ru_kejilgan ru_sibday # не очень
 # Женские:
 #   ru_aigul ru_albina ru_alfia ru_alfia2 ru_ekaterina ru_vika ru_karina ru_kermen
 #   ru_nurgul ru_oksana ru_onaoy ru_ramilia ru_saida ru_zara ru_zhadyra ru_zhazira ru_zinaida
@@ -22,7 +22,7 @@ en_model: "v3_en"
 ru_speaker: "ru_roman"
 service_speaker: "ru_albina"
 en_speaker: "en_102"
-emphasis_speaker: null # null = основной голос -- для курсива
+emphasis_speaker: ru_alexandr # null = основной голос -- для курсива
 
 # =============================================================================
 # Аудио
@@ -40,19 +40,19 @@ loudness_target: -23.0
 # Скорость
 # =============================================================================
 speed: 1.00 # основная
-emphasis_speed: 0.90 # для курсива
-en_speed: 0.90 # для английского
+emphasis_speed: 1.00 # для курсива
+en_speed: 0.95 # для английского
 
 # =============================================================================
 # Паузы
 # =============================================================================
-pause_between_sentences: 0.15
-pause_semicolon: 0.1 # после ;
-pause_colon: 0.07 # после :
-pause_between_paragraphs: 0.25
+pause_between_sentences: 0.35
+pause_semicolon: 0.15            # после ;
+pause_colon: 0.1                 # после :
+pause_between_paragraphs: 0.60
 pause_between_chapters: 1.5
-emphasis_pause_before: 0.1
-emphasis_pause_after: 0.1
+emphasis_pause_before: 0
+emphasis_pause_after: 0
 en_pause_before: 0.1
 en_pause_after: 0.1
 
@@ -78,7 +78,7 @@ filter_threads: 4 # потоков для аудиофильтров ffmpeg
 # Обработка звука через pedalboard (или pedalboard или ffmpeg_filter)
 # Постобработка pedalboard
 pedalboard_enabled: true
-pedalboard_room_tone: -48
+pedalboard_room_tone: 0 # фоновый шум. 0 = выкл. -48 = тихо, -75 еще тише
 pb_highpass_hz: 85
 pb_deharsh_hz: 5500
 pb_deharsh_db: -2.5
@@ -99,14 +99,14 @@ pb_reverb_wet: 0.09
 pb_reverb_width: 0.6
 pb_gain_db: 0.3
 
-# Постобработка аудио через ffmpeg (null = без обработки) (или pedalboard или ffmpeg_filter)
+# Постобработка аудио через ffmpeg (null = без обработки) (или pedalboard, или ffmpeg_filter)
 # Примеры:
 #   Смягчение высоких: "equalizer=f=4000:t=q:w=1:g=-3, equalizer=f=8000:t=q:w=2:g=-4"
 #   Компрессор: "acompressor=ratio=2:threshold=-20dB:attack=5:release=50"
 #   Обрезка частот: "highpass=f=80, lowpass=f=12000"
+ffmpeg_filter: null
 vorbis_quality: 6
 
-ffmpeg_filter: null
 # Мягкий фильтр
 #ffmpeg_filter: "highpass=f=60, lowpass=f=14000, acompressor=ratio=2:threshold=-24dB:attack=10:release=100"
 

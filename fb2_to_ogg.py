@@ -3,8 +3,6 @@
 TTS конвертер FB2 в аудио (OGG/WAV) с поддержкой сносок и ударений
 Использует Silero TTS для озвучивания текста
 
-Версия: 1.0.0
-
 ТРЕБОВАНИЯ:
   pip install torch torchaudio silero-tts numpy pyyaml
   sudo apt install ffmpeg
@@ -13,7 +11,7 @@ TTS конвертер FB2 в аудио (OGG/WAV) с поддержкой сн�
   python normalize_fb2.py book.fb2
 """
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 import argparse
 import gc
@@ -83,50 +81,86 @@ DEFAULT_CONFIG = {
     "filter_threads": 4,  # потоков для аудиофильтров ffmpeg
     # Постобработка pedalboard (рекомендуется)
     "pedalboard_enabled": False,
-    "pedalboard_room_tone": -48,      # уровень комнатного шума dB (0 = выкл)
-    "pb_highpass_hz": 85,             # обрезка инфраниза
-    "pb_lowpass_hz": 11500,           # обрезка высоких (песок)
-    "pb_warmth_hz": 280,              # частота "тепла"
-    "pb_warmth_db": 1.8,              # усиление тепла
-    "pb_clarity_hz": 3200,            # частота ясности
-    "pb_clarity_db": 1.4,             # усиление ясности
-    "pb_comp_threshold": -18,         # порог компрессора dB
-    "pb_comp_ratio": 2.4,             # ratio компрессора
-    "pb_comp_attack": 18,             # атака компрессора ms
-    "pb_comp_release": 120,           # релиз компрессора ms
-    "pb_reverb_room": 0.22,           # размер комнаты (0-1)
-    "pb_reverb_damping": 0.55,        # damping реверба (0-1)
-    "pb_reverb_wet": 0.09,            # уровень wet реверба (0-1)
-    "pb_reverb_width": 0.6,           # ширина реверба (0-1)
-    "pb_gain_db": 0.3,                # финальный гейн dB
-    "pb_deharsh_hz": 5500,            # частота подавления резонансов
-    "pb_deharsh_db": -2.5,            # ослабление резонансов dB
-    "pb_deharsh2_hz": 7800,           # вторая частота подавления
-    "pb_deharsh2_db": -3.0,           # ослабление dB
+    "pedalboard_room_tone": -48,  # уровень комнатного шума dB (0 = выкл)
+    "pb_highpass_hz": 85,  # обрезка инфраниза
+    "pb_lowpass_hz": 11500,  # обрезка высоких (песок)
+    "pb_warmth_hz": 280,  # частота "тепла"
+    "pb_warmth_db": 1.8,  # усиление тепла
+    "pb_clarity_hz": 3200,  # частота ясности
+    "pb_clarity_db": 1.4,  # усиление ясности
+    "pb_comp_threshold": -18,  # порог компрессора dB
+    "pb_comp_ratio": 2.4,  # ratio компрессора
+    "pb_comp_attack": 18,  # атака компрессора ms
+    "pb_comp_release": 120,  # релиз компрессора ms
+    "pb_reverb_room": 0.22,  # размер комнаты (0-1)
+    "pb_reverb_damping": 0.55,  # damping реверба (0-1)
+    "pb_reverb_wet": 0.09,  # уровень wet реверба (0-1)
+    "pb_reverb_width": 0.6,  # ширина реверба (0-1)
+    "pb_gain_db": 0.3,  # финальный гейн dB
+    "pb_deharsh_hz": 5500,  # частота подавления резонансов
+    "pb_deharsh_db": -2.5,  # ослабление резонансов dB
+    "pb_deharsh2_hz": 7800,  # вторая частота подавления
+    "pb_deharsh2_db": -3.0,  # ослабление dB
 }
 
 STRESS_MARK = "\u0301"
 STRESS_PATTERN = re.compile(r"([аеёиоуыэюяАЕЁИОУЫЭЮЯ])" + STRESS_MARK, re.IGNORECASE)
 
 MODEL_TYPES = {
-    "v5_5_ru": "auto", "v5_4_ru": "auto", "v5_3_ru": "auto",
-    "v5_2_ru": "auto", "v5_1_ru": "auto", "v5_ru": "auto",
-    "v5_cis_base": "manual", "v5_cis_base_nostress": "manual",
+    "v5_5_ru": "auto",
+    "v5_4_ru": "auto",
+    "v5_3_ru": "auto",
+    "v5_2_ru": "auto",
+    "v5_1_ru": "auto",
+    "v5_ru": "auto",
+    "v5_cis_base": "manual",
+    "v5_cis_base_nostress": "manual",
     "v5_cis_ext": "manual",
-    "v4_ru": "manual", "ru_v3": "manual", "v3_1_ru": "manual",
+    "v4_ru": "manual",
+    "ru_v3": "manual",
+    "v3_1_ru": "manual",
 }
 
-LANG_FROM_MODEL = {"v3_en": "en", "v3_de": "de", "v3_fr": "fr", "v3_es": "es", "v3_en_indic": "en"}
+LANG_FROM_MODEL = {
+    "v3_en": "en",
+    "v3_de": "de",
+    "v3_fr": "fr",
+    "v3_es": "es",
+    "v3_en_indic": "en",
+}
 
 RU_SPEAKERS_STANDARD = ["aidar", "baya", "kseniya", "xenia", "eugene"]
 RU_SPEAKERS_CIS = [
-    "ru_aigul", "ru_albina", "ru_alexandr", "ru_bogdan", "ru_dmitriy",
-    "ru_ekaterina", "ru_eduard", "ru_gamat", "ru_igor", "ru_karina",
-    "ru_kejilgan", "ru_kermen", "ru_larisa", "ru_marat", "ru_miyau",
-    "ru_nurgul", "ru_oksana", "ru_onaoy", "ru_ramilia", "ru_roman",
-    "ru_safarhuja", "ru_saida", "ru_sibday", "ru_vika", "ru_zara",
-    "ru_zhadyra", "ru_zhazira", "ru_zinaida"
+    "ru_aigul",
+    "ru_albina",
+    "ru_alexandr",
+    "ru_bogdan",
+    "ru_dmitriy",
+    "ru_ekaterina",
+    "ru_eduard",
+    "ru_gamat",
+    "ru_igor",
+    "ru_karina",
+    "ru_kejilgan",
+    "ru_kermen",
+    "ru_larisa",
+    "ru_marat",
+    "ru_miyau",
+    "ru_nurgul",
+    "ru_oksana",
+    "ru_onaoy",
+    "ru_ramilia",
+    "ru_roman",
+    "ru_safarhuja",
+    "ru_saida",
+    "ru_sibday",
+    "ru_vika",
+    "ru_zara",
+    "ru_zhadyra",
+    "ru_zhazira",
+    "ru_zinaida",
 ]
+
 
 def save_audio(audio: np.ndarray, filepath: str, sample_rate: int):
     """Сохраняет аудио в файл."""
@@ -150,6 +184,7 @@ def load_config(config_path: str) -> dict:
             with open(config_path, "r", encoding="utf-8") as f:
                 if config_path.endswith(".yaml") or config_path.endswith(".yml"):
                     import yaml
+
                     loaded_config = yaml.safe_load(f)
                 else:
                     loaded_config = json.load(f)
@@ -198,7 +233,9 @@ def run_ffmpeg(args: List[str], description: str = "") -> bool:
         return False
 
 
-def concat_ogg_files(input_files: List[Path], output_file: str, ffmpeg_filter: str = None) -> bool:
+def concat_ogg_files(
+    input_files: List[Path], output_file: str, ffmpeg_filter: str = None
+) -> bool:
     """Склеивает OGG файлы через ffmpeg с опциональной постобработкой."""
     concat_file = Path(output_file).with_suffix(".concat.txt")
     with open(concat_file, "w") as f:
@@ -207,11 +244,35 @@ def concat_ogg_files(input_files: List[Path], output_file: str, ffmpeg_filter: s
             f.write(f"file '{path.absolute()}'\n")
     if ffmpeg_filter:
         # Склейка + фильтр + перекодирование в ogg
-        q = str(config.get("vorbis_quality", 6)) if 'config' in dir() else "6"
-        args = ["-f", "concat", "-safe", "0", "-i", str(concat_file), "-af", ffmpeg_filter, "-c:a", "libvorbis", "-q:a", q, output_file]
+        q = str(config.get("vorbis_quality", 6)) if "config" in dir() else "6"
+        args = [
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_file),
+            "-af",
+            ffmpeg_filter,
+            "-c:a",
+            "libvorbis",
+            "-q:a",
+            q,
+            output_file,
+        ]
         desc = f"Склеено {len(input_files)} OGG-файлов с фильтром: {ffmpeg_filter}"
     else:
-        args = ["-f", "concat", "-safe", "0", "-i", str(concat_file), "-c", "copy", output_file]
+        args = [
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_file),
+            "-c",
+            "copy",
+            output_file,
+        ]
         desc = f"Склеено {len(input_files)} OGG-файлов"
     success = run_ffmpeg(args, desc)
     concat_file.unlink(missing_ok=True)
@@ -242,6 +303,7 @@ def split_long_text(text: str, max_length: int = 900) -> List[str]:
         parts.append(remaining)
     return parts
 
+
 class TextCleaner:
     """Очистка и подготовка текста для TTS."""
 
@@ -252,20 +314,38 @@ class TextCleaner:
             return ""
         text = unicodedata.normalize("NFC", text)
         replacements = {
-            "…": "...", "—": "-", "–": "-",
-            "\u2019": "'", "\u2018": "'",
-            "\u201c": '"', "\u201d": '"',
-            "\u00ab": '"', "\u00bb": '"',
-            "&nbsp;": " ", "&mdash;": "-", "&laquo;": '"', "&raquo;": '"',
-            "&amp;": "&", "&lt;": "<", "&gt;": ">",
-            "//": " ", "/*": " ", "*/": " ",  # убираем шипящие комбинации
+            "…": "...",
+            "—": ", ",
+            "–": ", ",
+            "-": " ",
+            "\u2019": "'",
+            "\u2018": "'",
+            "\u201c": '"',
+            "\u201d": '"',
+            "\u00ab": '"',
+            "\u00bb": '"',
+            "&nbsp;": " ",
+            "&mdash;": "-",
+            "&laquo;": '"',
+            "&raquo;": '"',
+            "&amp;": "&",
+            "&lt;": "<",
+            "&gt;": ">",
+            "//": " ",
+            "/*": " ",
+            "*/": " ",  # убираем шипящие комбинации
         }
         for old, new in replacements.items():
             text = text.replace(old, new)
         result = []
         for ch in text:
             cat = unicodedata.category(ch)
-            if cat.startswith("L") or cat.startswith("N") or cat.startswith("Z") or cat.startswith("M"):
+            if (
+                cat.startswith("L")
+                or cat.startswith("N")
+                or cat.startswith("Z")
+                or cat.startswith("M")
+            ):
                 result.append(ch)
             elif cat.startswith("P") or ch in "+-":
                 result.append(ch)
@@ -350,19 +430,29 @@ class FB2Parser:
 
     def _process_element(self, element, blocks: List[Dict]):
         """Обрабатывает элемент FB2."""
-        if element.tag in [f"{{{self.namespace}}}binary", f"{{{self.namespace}}}description"]:
+        if element.tag in [
+            f"{{{self.namespace}}}binary",
+            f"{{{self.namespace}}}description",
+        ]:
             return
         if element.tag == f"{{{self.namespace}}}epigraph":
             full_text = self._extract_text(element)
             if full_text.strip():
-                blocks.append({"type": "text", "content": self._norm(full_text.strip())})
+                blocks.append(
+                    {"type": "text", "content": self._norm(full_text.strip())}
+                )
             return
         if element.tag in [
-            f"{{{self.namespace}}}p", f"{{{self.namespace}}}title",
-            f"{{{self.namespace}}}subtitle", f"{{{self.namespace}}}cite",
-            f"{{{self.namespace}}}emphasis", f"{{{self.namespace}}}strong",
-            f"{{{self.namespace}}}annotation", f"{{{self.namespace}}}text-author",
-            f"{{{self.namespace}}}poem", f"{{{self.namespace}}}stanza",
+            f"{{{self.namespace}}}p",
+            f"{{{self.namespace}}}title",
+            f"{{{self.namespace}}}subtitle",
+            f"{{{self.namespace}}}cite",
+            f"{{{self.namespace}}}emphasis",
+            f"{{{self.namespace}}}strong",
+            f"{{{self.namespace}}}annotation",
+            f"{{{self.namespace}}}text-author",
+            f"{{{self.namespace}}}poem",
+            f"{{{self.namespace}}}stanza",
             f"{{{self.namespace}}}v",
         ]:
             self._extract_text_with_footnotes(element, blocks)
@@ -379,10 +469,14 @@ class FB2Parser:
             blocks.append({"type": "text", "content": self._norm(element.text)})
         for child in element:
             # Сохраняем tts_en теги (без namespace) как есть
-            if child.tag == "tts_en" or (child.tag.startswith("{") and child.tag.endswith("}tts_en")):
+            if child.tag == "tts_en" or (
+                child.tag.startswith("{") and child.tag.endswith("}tts_en")
+            ):
                 inner = self._extract_text(child).strip()
                 if inner:
-                    blocks.append({"type": "text", "content": f"<tts_en>{inner}</tts_en>"})
+                    blocks.append(
+                        {"type": "text", "content": f"<tts_en>{inner}</tts_en>"}
+                    )
                 # tail добавляем к предыдущему блоку если он текстовый, иначе отдельно
                 if child.tail and child.tail.strip():
                     tail_text = self._norm(child.tail)
@@ -398,16 +492,20 @@ class FB2Parser:
                     note_id = href[1:] if href.startswith("#") else href
                     if note_id in self.footnotes_map:
                         note_title = self._extract_text(child).strip()
-                        blocks.append({
-                            "type": "footnote",
-                            "id": note_id,
-                            "text": self.footnotes_map[note_id],
-                            "title": self._norm(note_title),
-                        })
+                        blocks.append(
+                            {
+                                "type": "footnote",
+                                "id": note_id,
+                                "text": self.footnotes_map[note_id],
+                                "title": self._norm(note_title),
+                            }
+                        )
                 else:
                     link_text = self._extract_text(child)
                     if link_text.strip():
-                        blocks.append({"type": "text", "content": self._norm(link_text)})
+                        blocks.append(
+                            {"type": "text", "content": self._norm(link_text)}
+                        )
             else:
                 self._extract_text_with_footnotes(child, blocks)
             if child.tail and child.tail.strip():
@@ -422,7 +520,9 @@ class FB2Parser:
             parts.append(self._norm(element.text.strip()))
         for child in element:
             # Сохраняем tts_en теги
-            if child.tag == "tts_en" or (child.tag.startswith("{") and child.tag.endswith("}tts_en")):
+            if child.tag == "tts_en" or (
+                child.tag.startswith("{") and child.tag.endswith("}tts_en")
+            ):
                 inner = self._extract_text(child).strip()
                 if inner:
                     parts.append(f"<tts_en>{inner}</tts_en>")
@@ -437,6 +537,7 @@ class FB2Parser:
             if child.tail and child.tail.strip():
                 parts.append(self._norm(child.tail.strip()))
         return " ".join(parts)
+
 
 class LanguageDetector:
     """Определение языка текста."""
@@ -456,7 +557,7 @@ class LanguageDetector:
         result = []
         for part in parts:
             if part.startswith("<tts_en>") and part.endswith("</tts_en>"):
-                inner = part[len("<tts_en>"):-len("</tts_en>")]
+                inner = part[len("<tts_en>") : -len("</tts_en>")]
                 if inner.strip():
                     result.append(("en", inner.strip()))
             else:
@@ -580,9 +681,13 @@ class SileroTTS:
                 self.models["en"].eval()
         except Exception:
             self.models["en"] = None
-            logger.warning(f"Не удалось загрузить модель {self.en_model_name} ({ext_lang})")
+            logger.warning(
+                f"Не удалось загрузить модель {self.en_model_name} ({ext_lang})"
+            )
 
-    def synthesize(self, text: str, language: str = "ru", speaker: str = None) -> np.ndarray:
+    def synthesize(
+        self, text: str, language: str = "ru", speaker: str = None
+    ) -> np.ndarray:
         """Синтезирует речь из текста."""
         if not text or not text.strip():
             return np.array([], dtype=np.float32)
@@ -609,7 +714,9 @@ class SileroTTS:
 
             processed_text = text
             if language == "ru":
-                processed_text = TextCleaner.convert_stress_for_model(text, self.ru_model_type)
+                processed_text = TextCleaner.convert_stress_for_model(
+                    text, self.ru_model_type
+                )
 
             audio = model.apply_tts(
                 text=processed_text, speaker=speaker, sample_rate=self.sample_rate
@@ -645,28 +752,79 @@ class SileroTTS:
                 return True
         return False
 
+
 def transliterate_to_cyrillic(text: str) -> str:
     """Транслитерация латиницы в кириллицу для fallback."""
     mapping = {
-        'a': 'а', 'b': 'б', 'c': 'к', 'd': 'д', 'e': 'е', 'f': 'ф',
-        'g': 'г', 'h': 'х', 'i': 'и', 'j': 'й', 'k': 'к', 'l': 'л',
-        'm': 'м', 'n': 'н', 'o': 'о', 'p': 'п', 'q': 'к', 'r': 'р',
-        's': 'с', 't': 'т', 'u': 'у', 'v': 'в', 'w': 'в', 'x': 'кс',
-        'y': 'ы', 'z': 'з',
-        'A': 'А', 'B': 'Б', 'C': 'К', 'D': 'Д', 'E': 'Е', 'F': 'Ф',
-        'G': 'Г', 'H': 'Х', 'I': 'И', 'J': 'Й', 'K': 'К', 'L': 'Л',
-        'M': 'М', 'N': 'Н', 'O': 'О', 'P': 'П', 'Q': 'К', 'R': 'Р',
-        'S': 'С', 'T': 'Т', 'U': 'У', 'V': 'В', 'W': 'В', 'X': 'Кс',
-        'Y': 'Ы', 'Z': 'З',
-        'sh': 'ш', 'ch': 'ч', 'th': 'з', 'ph': 'ф', 'kh': 'х',
-        'Sh': 'Ш', 'Ch': 'Ч', 'Th': 'З', 'Ph': 'Ф', 'Kh': 'Х',
+        "a": "а",
+        "b": "б",
+        "c": "к",
+        "d": "д",
+        "e": "е",
+        "f": "ф",
+        "g": "г",
+        "h": "х",
+        "i": "и",
+        "j": "й",
+        "k": "к",
+        "l": "л",
+        "m": "м",
+        "n": "н",
+        "o": "о",
+        "p": "п",
+        "q": "к",
+        "r": "р",
+        "s": "с",
+        "t": "т",
+        "u": "у",
+        "v": "в",
+        "w": "в",
+        "x": "кс",
+        "y": "ы",
+        "z": "з",
+        "A": "А",
+        "B": "Б",
+        "C": "К",
+        "D": "Д",
+        "E": "Е",
+        "F": "Ф",
+        "G": "Г",
+        "H": "Х",
+        "I": "И",
+        "J": "Й",
+        "K": "К",
+        "L": "Л",
+        "M": "М",
+        "N": "Н",
+        "O": "О",
+        "P": "П",
+        "Q": "К",
+        "R": "Р",
+        "S": "С",
+        "T": "Т",
+        "U": "У",
+        "V": "В",
+        "W": "В",
+        "X": "Кс",
+        "Y": "Ы",
+        "Z": "З",
+        "sh": "ш",
+        "ch": "ч",
+        "th": "з",
+        "ph": "ф",
+        "kh": "х",
+        "Sh": "Ш",
+        "Ch": "Ч",
+        "Th": "З",
+        "Ph": "Ф",
+        "Kh": "Х",
     }
     result = []
     i = 0
     while i < len(text):
         ch = text[i]
         if ch.isascii() and ch.isalpha():
-            digraph = text[i:i+2]
+            digraph = text[i : i + 2]
             if digraph in mapping:
                 result.append(mapping[digraph])
                 i += 2
@@ -676,7 +834,7 @@ def transliterate_to_cyrillic(text: str) -> str:
         else:
             result.append(ch)
             i += 1
-    return ''.join(result)
+    return "".join(result)
 
 
 class TTSProcessor:
@@ -689,7 +847,9 @@ class TTSProcessor:
         self.ru_speaker = self.tts._get_default_ru_speaker()
         self.service_speaker = self.tts._get_service_speaker()
         self.ext_lang = self.tts._lang_from_en_model()
-        self.ext_speaker = config.get("en_speaker") or self.tts._get_default_speaker(self.ext_lang)
+        self.ext_speaker = config.get("en_speaker") or self.tts._get_default_speaker(
+            self.ext_lang
+        )
         self.pause_between_paragraphs = config.get("pause_between_paragraphs", 0.2)
         self.pause_between_sentences = config.get("pause_between_sentences", 0.05)
         self.footnote_prefix = config.get("footnote_prefix", "Сноска")
@@ -721,9 +881,24 @@ class TTSProcessor:
         target_rms = 10 ** (target_lufs / 20) * 0.5
 
         test_phrases = [
-            ("ru_main", "ru", self.ru_speaker, "тестовая фраза для калибровки громкости."),
-            ("ru_service", "ru", self.service_speaker, "тестовая фраза для калибровки громкости."),
-            (self.ext_lang, self.ext_lang, self.ext_speaker, f"test phrase for volume calibration in {self.ext_lang}."),
+            (
+                "ru_main",
+                "ru",
+                self.ru_speaker,
+                "тестовая фраза для калибровки громкости.",
+            ),
+            (
+                "ru_service",
+                "ru",
+                self.service_speaker,
+                "тестовая фраза для калибровки громкости.",
+            ),
+            (
+                self.ext_lang,
+                self.ext_lang,
+                self.ext_speaker,
+                f"test phrase for volume calibration in {self.ext_lang}.",
+            ),
         ]
 
         logger.info("Калибровка громкости голосов:")
@@ -731,12 +906,16 @@ class TTSProcessor:
         for name, lang, speaker, phrase in test_phrases:
             if lang == self.ext_lang and not self.tts.is_model_available(self.ext_lang):
                 self.speaker_gains[name] = self.speaker_gains["ru_main"]
-                logger.info(f"  {name}: модель недоступна, используется gain русского голоса (×{self.speaker_gains['ru_main']:.3f})")
+                logger.info(
+                    f"  {name}: модель недоступна, используется gain русского голоса (×{self.speaker_gains['ru_main']:.3f})"
+                )
                 continue
 
             audio = self.tts.synthesize(phrase, lang, speaker)
             if len(audio) == 0:
-                logger.warning(f"  {name}: не удалось синтезировать тестовую фразу, используется gain=1.0")
+                logger.warning(
+                    f"  {name}: не удалось синтезировать тестовую фразу, используется gain=1.0"
+                )
                 continue
 
             current_rms = measure_rms(audio)
@@ -744,9 +923,13 @@ class TTSProcessor:
                 gain = target_rms / current_rms
                 self.speaker_gains[name] = gain
                 current_lufs_approx = 20 * np.log10(current_rms / 0.5)
-                logger.info(f"  {name}: RMS={current_rms:.4f} (~{current_lufs_approx:.0f} LUFS) → gain=×{gain:.3f}")
+                logger.info(
+                    f"  {name}: RMS={current_rms:.4f} (~{current_lufs_approx:.0f} LUFS) → gain=×{gain:.3f}"
+                )
             else:
-                logger.warning(f"  {name}: нулевая громкость тестовой фразы, используется gain=1.0")
+                logger.warning(
+                    f"  {name}: нулевая громкость тестовой фразы, используется gain=1.0"
+                )
 
         logger.info(f"  Целевой RMS: {target_rms:.4f} (~{target_lufs} LUFS)")
 
@@ -763,14 +946,20 @@ class TTSProcessor:
                     continue
                 chunks = split_long_text(cleaned, self.max_chunk_length)
                 for chunk in chunks:
-                    if lang == self.ext_lang and self.tts.is_model_available(self.ext_lang):
+                    if lang == self.ext_lang and self.tts.is_model_available(
+                        self.ext_lang
+                    ):
                         # Пауза перед английским
                         if self.en_pause_before > 0:
                             all_audio.append(self.add_silence(self.en_pause_before))
-                        audio = self.tts.synthesize(chunk, self.ext_lang, self.ext_speaker)
+                        audio = self.tts.synthesize(
+                            chunk, self.ext_lang, self.ext_speaker
+                        )
                         audio = audio * self.speaker_gains[self.ext_lang]
                         if self.en_speed != 1.0:
-                            audio = change_speed_audio(audio, self.sample_rate, self.en_speed)
+                            audio = change_speed_audio(
+                                audio, self.sample_rate, self.en_speed
+                            )
                         if len(audio) > 0:
                             all_audio.append(audio)
                         if self.en_pause_after > 0:
@@ -780,13 +969,19 @@ class TTSProcessor:
                         chunk_to_synth = chunk
                         if LanguageDetector.has_latin(chunk):
                             chunk_to_synth = transliterate_to_cyrillic(chunk)
-                        audio = self.tts.synthesize(chunk_to_synth, "ru", self.ru_speaker)
+                        audio = self.tts.synthesize(
+                            chunk_to_synth, "ru", self.ru_speaker
+                        )
                         audio = audio * self.speaker_gains["ru_main"]
                         if len(audio) > 0:
                             all_audio.append(audio)
-                    all_audio.append(np.zeros(int(self.sample_rate * 0.05), dtype=np.float32))
+                    all_audio.append(
+                        np.zeros(int(self.sample_rate * 0.05), dtype=np.float32)
+                    )
             if all_audio:
-                if len(all_audio) > 1 and all_audio[-1].size < int(self.sample_rate * 0.5):
+                if len(all_audio) > 1 and all_audio[-1].size < int(
+                    self.sample_rate * 0.5
+                ):
                     all_audio = all_audio[:-1]
                 return np.concatenate(all_audio)
             return np.zeros(int(self.sample_rate * 0.1), dtype=np.float32)
@@ -812,7 +1007,9 @@ class TTSProcessor:
                     audio = self.synthesize_text(text)
                     if len(audio) > 0:
                         result_audio.append(audio)
-                        result_audio.append(self.add_silence(self.pause_between_paragraphs))
+                        result_audio.append(
+                            self.add_silence(self.pause_between_paragraphs)
+                        )
 
             elif block["type"] == "emphasis":
                 print(f"  🖊️  {block.get('content', '')[:50]}")
@@ -825,7 +1022,9 @@ class TTSProcessor:
                 result_audio.append(self.add_silence(0.3))
 
                 if note_title:
-                    audio = self.synthesize_service(f"{self.footnote_prefix} {note_title}")
+                    audio = self.synthesize_service(
+                        f"{self.footnote_prefix} {note_title}"
+                    )
                 else:
                     audio = self.synthesize_service(self.footnote_prefix)
 
@@ -854,35 +1053,63 @@ class TTSProcessor:
     def _apply_pedalboard(self, audio: np.ndarray) -> np.ndarray:
         """Постобработка через pedalboard: компрессор + эквалайзер + реверб + комнатный шум."""
         try:
-            from pedalboard import Pedalboard, HighpassFilter, LowpassFilter, PeakFilter, Compressor, Reverb, Gain
+            from pedalboard import (
+                Compressor,
+                Gain,
+                HighpassFilter,
+                LowpassFilter,
+                PeakFilter,
+                Pedalboard,
+                Reverb,
+            )
             from scipy import signal as scipy_signal
         except ImportError:
-            logger.warning("pedalboard или scipy не установлены. pip install pedalboard scipy")
+            logger.warning(
+                "pedalboard или scipy не установлены. pip install pedalboard scipy"
+            )
             return audio
         cfg = self.config
         try:
-            board = Pedalboard([
-                HighpassFilter(cutoff_frequency_hz=cfg.get("pb_highpass_hz", 85)),
-                PeakFilter(cutoff_frequency_hz=cfg.get("pb_deharsh_hz", 5500), gain_db=cfg.get("pb_deharsh_db", -2.5), q=2.0),
-                PeakFilter(cutoff_frequency_hz=cfg.get("pb_deharsh2_hz", 7800), gain_db=cfg.get("pb_deharsh2_db", -3.0), q=2.0),
-                LowpassFilter(cutoff_frequency_hz=cfg.get("pb_lowpass_hz", 11500)),
-                PeakFilter(cutoff_frequency_hz=cfg.get("pb_warmth_hz", 280), gain_db=cfg.get("pb_warmth_db", 1.8), q=0.9),
-                PeakFilter(cutoff_frequency_hz=cfg.get("pb_clarity_hz", 3200), gain_db=cfg.get("pb_clarity_db", 1.4), q=1.1),
-                Compressor(
-                    threshold_db=cfg.get("pb_comp_threshold", -18),
-                    ratio=cfg.get("pb_comp_ratio", 2.4),
-                    attack_ms=cfg.get("pb_comp_attack", 18),
-                    release_ms=cfg.get("pb_comp_release", 120),
-                ),
-                Reverb(
-                    room_size=cfg.get("pb_reverb_room", 0.22),
-                    damping=cfg.get("pb_reverb_damping", 0.55),
-                    wet_level=cfg.get("pb_reverb_wet", 0.09),
-                    dry_level=1.0 - cfg.get("pb_reverb_wet", 0.09),
-                    width=cfg.get("pb_reverb_width", 0.6),
-                ),
-                Gain(gain_db=cfg.get("pb_gain_db", 0.3)),
-            ])
+            board = Pedalboard(
+                [
+                    HighpassFilter(cutoff_frequency_hz=cfg.get("pb_highpass_hz", 85)),
+                    PeakFilter(
+                        cutoff_frequency_hz=cfg.get("pb_deharsh_hz", 5500),
+                        gain_db=cfg.get("pb_deharsh_db", -2.5),
+                        q=2.0,
+                    ),
+                    PeakFilter(
+                        cutoff_frequency_hz=cfg.get("pb_deharsh2_hz", 7800),
+                        gain_db=cfg.get("pb_deharsh2_db", -3.0),
+                        q=2.0,
+                    ),
+                    LowpassFilter(cutoff_frequency_hz=cfg.get("pb_lowpass_hz", 11500)),
+                    PeakFilter(
+                        cutoff_frequency_hz=cfg.get("pb_warmth_hz", 280),
+                        gain_db=cfg.get("pb_warmth_db", 1.8),
+                        q=0.9,
+                    ),
+                    PeakFilter(
+                        cutoff_frequency_hz=cfg.get("pb_clarity_hz", 3200),
+                        gain_db=cfg.get("pb_clarity_db", 1.4),
+                        q=1.1,
+                    ),
+                    Compressor(
+                        threshold_db=cfg.get("pb_comp_threshold", -18),
+                        ratio=cfg.get("pb_comp_ratio", 2.4),
+                        attack_ms=cfg.get("pb_comp_attack", 18),
+                        release_ms=cfg.get("pb_comp_release", 120),
+                    ),
+                    Reverb(
+                        room_size=cfg.get("pb_reverb_room", 0.22),
+                        damping=cfg.get("pb_reverb_damping", 0.55),
+                        wet_level=cfg.get("pb_reverb_wet", 0.09),
+                        dry_level=1.0 - cfg.get("pb_reverb_wet", 0.09),
+                        width=cfg.get("pb_reverb_width", 0.6),
+                    ),
+                    Gain(gain_db=cfg.get("pb_gain_db", 0.3)),
+                ]
+            )
             processed = board(audio[np.newaxis, :], self.sample_rate)
             result = processed[0]
             room_level = cfg.get("pedalboard_room_tone", 0)
@@ -898,6 +1125,7 @@ class TTSProcessor:
             logger.warning(f"Pedalboard error: {e}")
             return audio
 
+
 class FB2ToAudioConverter:
     """Основной конвертер FB2 в аудио."""
 
@@ -908,7 +1136,9 @@ class FB2ToAudioConverter:
         self.pause_between_chapters = config.get("pause_between_chapters", 1.5)
         self.blocks_per_part = config.get("blocks_per_part", 100)
 
-    def convert_file_streaming(self, input_file: str, output_file: str, work_dir: str = None) -> bool:
+    def convert_file_streaming(
+        self, input_file: str, output_file: str, work_dir: str = None
+    ) -> bool:
         """Конвертирует файл в потоковом режиме."""
         start_time = time.time()
         logger.info(f"Обработка (потоковая): {input_file}")
@@ -927,9 +1157,13 @@ class FB2ToAudioConverter:
         all_blocks = []
         for chapter_blocks in chapters:
             all_blocks.extend(chapter_blocks)
-            all_blocks.append({"type": "pause", "duration": self.pause_between_chapters})
+            all_blocks.append(
+                {"type": "pause", "duration": self.pause_between_chapters}
+            )
 
-        total_parts = (len(all_blocks) + self.blocks_per_part - 1) // self.blocks_per_part
+        total_parts = (
+            len(all_blocks) + self.blocks_per_part - 1
+        ) // self.blocks_per_part
         part_files = []
 
         logger.info(f"Всего блоков: {len(all_blocks)}, частей: {total_parts}")
@@ -940,7 +1174,9 @@ class FB2ToAudioConverter:
                 end = min(start + self.blocks_per_part, len(all_blocks))
                 part_blocks = all_blocks[start:end]
 
-                logger.info(f"Часть {part_idx + 1}/{total_parts}: блоки {start + 1}-{end}")
+                logger.info(
+                    f"Часть {part_idx + 1}/{total_parts}: блоки {start + 1}-{end}"
+                )
 
                 elapsed = time.time() - start_time
                 elapsed_str = f"{int(elapsed // 3600):02}:{int((elapsed % 3600) // 60):02}:{int(elapsed % 60):02}"
@@ -1022,11 +1258,20 @@ class FB2ToAudioConverter:
                 except:
                     pass
             else:
-                logger.warning(f"Выходной файл не создан, части сохранены в {work_path}")
+                logger.warning(
+                    f"Выходной файл не создан, части сохранены в {work_path}"
+                )
 
         return True
 
-def print_header(config: dict, input_file: str, output_file: str, ru_speaker: str, service_speaker: str):
+
+def print_header(
+    config: dict,
+    input_file: str,
+    output_file: str,
+    ru_speaker: str,
+    service_speaker: str,
+):
     """Выводит заголовок с информацией о конвертации."""
     device = config.get("device", "auto")
     if device == "auto":
@@ -1054,16 +1299,34 @@ def print_header(config: dict, input_file: str, output_file: str, ru_speaker: st
     elif device == "cpu":
         device_name = f"CPU ({threads} потоков)"
 
-    sys.stderr.write(f"\n{BOLD}{CYAN}╔══════════════════════════════════════════════════════════════╗{RESET}\n")
-    sys.stderr.write(f"{BOLD}{CYAN}║{RESET} {BOLD}FB2 to Audio Converter v{VERSION}{RESET}\n")
-    sys.stderr.write(f"{BOLD}{CYAN}╠══════════════════════════════════════════════════════════════╣{RESET}\n")
-    sys.stderr.write(f"{BOLD}{CYAN}║{RESET} {GREEN}Вход:{RESET} {v(Path(input_file).name):<30} {GREEN}Выход:{RESET} {v(Path(output_file).name)}\n")
-    sys.stderr.write(f"{BOLD}{CYAN}║{RESET} {GREEN}RU:{RESET} {v(config.get('ru_model','?'))} \x7b {v(ru_speaker):<15} \x7d  {GREEN}Служ.:{RESET} {v(service_speaker)}\n")
-    sys.stderr.write(f"{BOLD}{CYAN}║{RESET} {GREEN}EX:{RESET} {v(ext_model)} \x7b {v(ext_speaker):<12} \x7d {GREEN}Скор.:{RESET} {v(str(en_speed)+'x')}\n")
+    sys.stderr.write(
+        f"\n{BOLD}{CYAN}╔══════════════════════════════════════════════════════════════╗{RESET}\n"
+    )
+    sys.stderr.write(
+        f"{BOLD}{CYAN}║{RESET} {BOLD}FB2 to Audio Converter v{VERSION}{RESET}\n"
+    )
+    sys.stderr.write(
+        f"{BOLD}{CYAN}╠══════════════════════════════════════════════════════════════╣{RESET}\n"
+    )
+    sys.stderr.write(
+        f"{BOLD}{CYAN}║{RESET} {GREEN}Вход:{RESET} {v(Path(input_file).name):<30} {GREEN}Выход:{RESET} {v(Path(output_file).name)}\n"
+    )
+    sys.stderr.write(
+        f"{BOLD}{CYAN}║{RESET} {GREEN}RU:{RESET} {v(config.get('ru_model','?'))} \x7b {v(ru_speaker):<15} \x7d  {GREEN}Служ.:{RESET} {v(service_speaker)}\n"
+    )
+    sys.stderr.write(
+        f"{BOLD}{CYAN}║{RESET} {GREEN}EX:{RESET} {v(ext_model)} \x7b {v(ext_speaker):<12} \x7d {GREEN}Скор.:{RESET} {v(str(en_speed)+'x')}\n"
+    )
     sys.stderr.write(f"{BOLD}{CYAN}║{RESET} {GREEN}Устр-во:{RESET} {v(device_name)}\n")
-    sys.stderr.write(f"{BOLD}{CYAN}║{RESET} {GREEN}Частота:{RESET} {v(str(config.get('sample_rate', 48000))+' Гц')}  {GREEN}Скор.:{RESET} {v(str(speed)+'x')}   {GREEN}Громк.:{RESET} {v(str(loudness)+' LUFS' if loudness else 'без')}\n")
-    sys.stderr.write(f"{BOLD}{CYAN}║{RESET} {GREEN}Чанк:{RESET} {v(str(config.get('max_chunk_length', 900))+' симв.')}    {GREEN}Сноски:{RESET} {v('пропущены' if skip_fn else 'озвучены')}\n")
-    sys.stderr.write(f"{BOLD}{CYAN}╚══════════════════════════════════════════════════════════════╝{RESET}\n")
+    sys.stderr.write(
+        f"{BOLD}{CYAN}║{RESET} {GREEN}Частота:{RESET} {v(str(config.get('sample_rate', 48000))+' Гц')}  {GREEN}Скор.:{RESET} {v(str(speed)+'x')}   {GREEN}Громк.:{RESET} {v(str(loudness)+' LUFS' if loudness else 'без')}\n"
+    )
+    sys.stderr.write(
+        f"{BOLD}{CYAN}║{RESET} {GREEN}Чанк:{RESET} {v(str(config.get('max_chunk_length', 900))+' симв.')}    {GREEN}Сноски:{RESET} {v('пропущены' if skip_fn else 'озвучены')}\n"
+    )
+    sys.stderr.write(
+        f"{BOLD}{CYAN}╚══════════════════════════════════════════════════════════════╝{RESET}\n"
+    )
     sys.stderr.flush()
 
 
@@ -1089,12 +1352,14 @@ def list_speakers(config: dict):
 
 def list_models():
     """Выводит список доступных моделей."""
-    print("""
+    print(
+        """
 Русские (авто-ударения): v5_5_ru, v5_4_ru, v5_3_ru, v5_2_ru, v5_1_ru, v5_ru
 Русские (ручные ударения): v5_cis_base, v5_cis_base_nostress, v5_cis_ext
 Русские (v4/v3): v4_ru, v3_1_ru, ru_v3
 Дополнительные: v3_en, v3_de, v3_fr, v3_es, v3_en_indic
-""")
+"""
+    )
 
 
 def setup_logging(config: dict, args):
@@ -1106,7 +1371,9 @@ def setup_logging(config: dict, args):
 
     log_file = str(Path(args.input).with_suffix(".log"))
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    )
     logger.addHandler(file_handler)
 
     if args.debug:
@@ -1172,10 +1439,13 @@ def dry_run(input_file: str, config: dict):
     print(f"Сносок:              {total_footnotes}")
     print(f"Всего символов:      {total_chars}")
     print(f"Латиницы:            {en_chars} ({100*en_chars/max(1,total_chars):.1f}%)")
-    print(f"Кириллицы:           {total_chars - en_chars} ({100*(total_chars-en_chars)/max(1,total_chars):.1f}%)")
+    print(
+        f"Кириллицы:           {total_chars - en_chars} ({100*(total_chars-en_chars)/max(1,total_chars):.1f}%)"
+    )
     print(f"Частей для синтеза:  {total_parts}")
     print(f"Блоков в части:      {blocks_per_part}")
     print()
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1193,17 +1463,27 @@ def main():
     parser.add_argument("--sample-rate", type=int, help="Частота")
     parser.add_argument("--format", choices=["ogg", "wav"], help="Формат")
     parser.add_argument("--speed", type=float, help="Скорость (0.25-4.0)")
-    parser.add_argument("--loudness", type=float, help="Целевая громкость LUFS для калибровки")
-    parser.add_argument("--no-calibrate", action="store_true", help="Отключить калибровку громкости")
-    parser.add_argument("--skip-footnotes", action="store_true", help="Не озвучивать сноски")
+    parser.add_argument(
+        "--loudness", type=float, help="Целевая громкость LUFS для калибровки"
+    )
+    parser.add_argument(
+        "--no-calibrate", action="store_true", help="Отключить калибровку громкости"
+    )
+    parser.add_argument(
+        "--skip-footnotes", action="store_true", help="Не озвучивать сноски"
+    )
     parser.add_argument("--cpu", action="store_true", help="CPU")
     parser.add_argument("--device", choices=["auto", "cuda", "cpu"], help="Устройство")
     parser.add_argument("--parallel", type=int, default=None, help="Число потоков")
     parser.add_argument("--list-ru-speakers", action="store_true")
     parser.add_argument("--list-en-speakers", action="store_true")
-    parser.add_argument("--list-de-speakers", action="store_true", help="Показать немецкие голоса")
+    parser.add_argument(
+        "--list-de-speakers", action="store_true", help="Показать немецкие голоса"
+    )
     parser.add_argument("--list-models", action="store_true")
-    parser.add_argument("--dry-run", action="store_true", help="Проверить текст без синтеза")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Проверить текст без синтеза"
+    )
     parser.add_argument("--debug", action="store_true", help="Расширенный вывод")
 
     args = parser.parse_args()
@@ -1217,8 +1497,14 @@ def main():
     config = load_config(args.config)
 
     for key in [
-        "ru_model", "en_model", "ru_speaker", "en_speaker", "service_speaker",
-        "sample_rate", "format", "speed",
+        "ru_model",
+        "en_model",
+        "ru_speaker",
+        "en_speaker",
+        "service_speaker",
+        "sample_rate",
+        "format",
+        "speed",
     ]:
         val = getattr(args, key, None)
         if val is not None:
@@ -1263,7 +1549,9 @@ def main():
 
     setup_logging(config, args)
 
-    output_file = args.output or str(Path(args.input).with_suffix(f".{config.get('format', 'ogg')}"))
+    output_file = args.output or str(
+        Path(args.input).with_suffix(f".{config.get('format', 'ogg')}")
+    )
 
     if args.dry_run:
         dry_run(args.input, config)
@@ -1272,8 +1560,11 @@ def main():
     try:
         converter = FB2ToAudioConverter(config)
         print_header(
-            config, args.input, output_file,
-            converter.tts.ru_speaker, converter.tts.service_speaker,
+            config,
+            args.input,
+            output_file,
+            converter.tts.ru_speaker,
+            converter.tts.service_speaker,
         )
         return 0 if converter.convert_file_streaming(args.input, output_file) else 1
     except KeyboardInterrupt:
@@ -1285,6 +1576,7 @@ def main():
         logger.exception("Критическая ошибка")
         if args.debug:
             import traceback
+
             traceback.print_exc()
         return 1
 
