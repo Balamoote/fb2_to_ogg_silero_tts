@@ -27,21 +27,41 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-import numpy as np
-
-try:
-    import torch
-    import torchaudio
-except ImportError as e:
-    print(f"Не установлены необходимые пакеты: {e}")
-    print("Установите: pip install torch torchaudio")
-    exit(1)
-
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
 CYAN = "\033[96m"
+RED = "\033[91m"
 RESET = "\033[0m"
 BOLD = "\033[1m"
+
+# Проверка всех необходимых пакетов перед работой
+REQUIRED_PACKAGES = {
+    "torch": "torch",
+    "torchaudio": "torchaudio",
+    "torchcodec": "torchcodec",
+    "silero-tts": "silero_tts",
+    "numpy": "numpy",
+    "pyyaml": "yaml",
+    "pedalboard": "pedalboard",
+    "scipy": "scipy",
+}
+MISSING = []
+for pkg_name, import_name in REQUIRED_PACKAGES.items():
+    try:
+        __import__(import_name)
+    except ImportError:
+        MISSING.append(pkg_name)
+
+if MISSING:
+    print(f"\n{RED}Не установлены необходимые пакеты:{RESET}")
+    for pkg in MISSING:
+        print(f"  - {pkg}")
+    print(f"\nУстановите:\n  pip install {' '.join(MISSING)}")
+    exit(1)
+
+import numpy as np
+import torch
+import torchaudio
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +101,7 @@ DEFAULT_CONFIG = {
     "filter_threads": 4,  # потоков для аудиофильтров ffmpeg
     # Постобработка pedalboard (рекомендуется)
     "pedalboard_enabled": False,
-    "pedalboard_room_tone": -48,  # уровень комнатного шума dB (0 = выкл)
+    "pedalboard_room_tone": 0,  # уровень комнатного шума dB (0 = выкл)
     "pb_highpass_hz": 85,  # обрезка инфраниза
     "pb_lowpass_hz": 11500,  # обрезка высоких (песок)
     "pb_warmth_hz": 280,  # частота "тепла"
@@ -165,6 +185,12 @@ RU_SPEAKERS_CIS = [
 def save_audio(audio: np.ndarray, filepath: str, sample_rate: int):
     """Сохраняет аудио в файл."""
     try:
+        import soundfile as sf
+        sf.write(filepath, audio, sample_rate)
+        return True
+    except ImportError:
+        pass
+    try:
         audio_tensor = (
             torch.from_numpy(audio).float().unsqueeze(0)
             if isinstance(audio, np.ndarray)
@@ -234,7 +260,7 @@ def run_ffmpeg(args: List[str], description: str = "") -> bool:
 
 
 def concat_ogg_files(
-    input_files: List[Path], output_file: str, ffmpeg_filter: str = None
+    input_files: List[Path], output_file: str, ffmpeg_filter: str = None, vorbis_quality: int = 6
 ) -> bool:
     """Склеивает OGG файлы через ffmpeg с опциональной постобработкой."""
     concat_file = Path(output_file).with_suffix(".concat.txt")
@@ -243,8 +269,7 @@ def concat_ogg_files(
             path = Path(filepath) if not isinstance(filepath, Path) else filepath
             f.write(f"file '{path.absolute()}'\n")
     if ffmpeg_filter:
-        # Склейка + фильтр + перекодирование в ogg
-        q = str(config.get("vorbis_quality", 6)) if "config" in dir() else "6"
+        q = str(vorbis_quality)
         args = [
             "-f",
             "concat",
@@ -1212,6 +1237,8 @@ class FB2ToAudioConverter:
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
+            sys.stderr.write("\n")
+            sys.stderr.flush()
             final_phrase = self.config.get("final_phrase", "")
             if final_phrase:
                 logger.info("Финальная фраза...")
@@ -1231,7 +1258,7 @@ class FB2ToAudioConverter:
 
             logger.info(f"Склейка {len(part_files)} OGG-частей...")
             ffmpeg_filter = self.config.get("ffmpeg_filter")
-            if not concat_ogg_files(part_files, output_file, ffmpeg_filter):
+            if not concat_ogg_files(part_files, output_file, ffmpeg_filter, self.config.get("vorbis_quality", 6)):
                 logger.error("Не удалось склеить части")
                 return False
 
@@ -1369,7 +1396,9 @@ def setup_logging(config: dict, args):
     logger.handlers.clear()
     logger.setLevel(log_level)
 
-    log_file = str(Path(args.input).with_suffix(".log"))
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    log_file = str(log_dir / Path(args.input).with_suffix(".log").name)
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
     file_handler.setFormatter(
         logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")

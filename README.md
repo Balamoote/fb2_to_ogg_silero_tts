@@ -34,7 +34,7 @@
 
 - Python 3.10+
 - ffmpeg (системная зависимость)
-- Для fb2_to_ogg.py: torch, torchaudio, silero-tts
+- Для fb2_to_ogg.py: torch torchaudio torchcodec silero-tts numpy pyyaml pedalboard scipy
 - Для normalize_fb2.py: regex
 
 ## Быстрый старт
@@ -51,12 +51,12 @@ source .venv/bin/activate
 uv pip install regex
 
 # Зависимости для озвучки (добавить при необходимости)
-uv pip install torch torchaudio silero-tts numpy pyyaml pedalboard scipy
+uv pip install torch torchaudio torchcodec silero-tts numpy pyyaml pedalboard scipy
 
 # Для обработки звука можно включить в конфиге `pedalboard` или `ffmpeg`.
 # pedalboard производит обрабоотку "на лету", а ffmpeg — при сборке финального файл (это долго).
 
-# Системная зависимость ffmpeg (альтенатива для pedalboard)
+# Системная зависимость ffmpeg (необязательно: альтенатива для pedalboard)
 sudo apt install ffmpeg
 `или`
 winget install -e --id Gyan.FFmpeg

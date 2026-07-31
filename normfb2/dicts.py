@@ -85,9 +85,11 @@ class AcronymDict:
 
     @staticmethod
     def _parse_dict_file(filepath: Path) -> Dict[str, str]:
+        """Парсит словарь. Для en словаря формат: KEY = EN_PRON = RU_PRON"""
         result = {}
         if not filepath.exists():
             return result
+        is_en_dict = 'acro_en' in str(filepath)
         try:
             with gzip.open(filepath, "rt", encoding="utf-8") as f:
                 for line in f:
@@ -95,15 +97,28 @@ class AcronymDict:
                     if not line or line.startswith("#"):
                         continue
                     if "=" in line:
-                        if " = " in line:
+                        if is_en_dict and line.count("=") >= 2:
+                            # Формат: KEY = EN_PRON = RU_PRON
+                            parts = line.split("=", 2)
+                            key = parts[0].strip()
+                            en_val = parts[1].strip()
+                            ru_val = parts[2].strip()
+                            # Сохраняем как составное значение: en_val|ru_val
+                            result[key] = f"{en_val}|{ru_val}"
+                        elif " = " in line:
                             parts = line.split(" = ", 1)
+                            if len(parts) == 2:
+                                key = parts[0].strip()
+                                value = parts[1].strip()
+                                if key and value:
+                                    result[key] = value
                         else:
                             parts = line.rsplit("=", 1)
-                        if len(parts) == 2:
-                            key = parts[0].strip()
-                            value = parts[1].strip()
-                            if key and value:
-                                result[key] = value
+                            if len(parts) == 2:
+                                key = parts[0].strip()
+                                value = parts[1].strip()
+                                if key and value:
+                                    result[key] = value
                     else:
                         key = line.strip()
                         if key:
@@ -225,11 +240,35 @@ class AcronymDict:
         dictionary = self.acro_ru if language == "ru" else self.acro_en
         if word in dictionary:
             value = dictionary[word]
+            if language == "en" and "|" in value:
+                return value  # вернём составное значение en|ru
             return value if value else self._make_spelling(word, language)
         for key, value in dictionary.items():
             if word.upper() == key.upper():
+                if language == "en" and "|" in value:
+                    return value
                 return value if value else self._make_spelling(key, language)
         return None
+    
+    def get_en_pronunciation(self, word: str):
+        """Возвращает (en_pron, ru_pron) для английского акронима"""
+        dictionary = self.acro_en
+        val = None
+        if word in dictionary:
+            val = dictionary[word]
+        else:
+            for key, value in dictionary.items():
+                if word.upper() == key.upper():
+                    val = value
+                    break
+        if val and "|" in val:
+            parts = val.split("|", 1)
+            en = parts[0].strip() if len(parts) > 0 else ""
+            ru = parts[1].strip() if len(parts) > 1 else ""
+            return (en, ru)
+        if val:
+            return (val, "")
+        return ("", "")
 
     def get_ruler_form(self, name: str) -> Optional[Dict]:
         import unicodedata

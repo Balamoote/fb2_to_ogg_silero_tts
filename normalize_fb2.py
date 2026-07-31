@@ -6,7 +6,7 @@
   python normalize_fb2.py book.fb2
 """
 
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 
 import argparse
 import hashlib
@@ -337,7 +337,9 @@ def md5_file(filepath: str) -> str:
 
 
 def get_cache_path(input_file: str) -> Path:
-    return Path(input_file).with_suffix(".norm_cache.json")
+    cache_dir = Path("logs")
+    cache_dir.mkdir(exist_ok=True)
+    return cache_dir / Path(input_file).with_suffix(".norm_cache.json").name
 
 
 def load_cache(cache_path: Path) -> dict:

@@ -8,7 +8,6 @@ from typing import List, Tuple
 import regex as re
 
 from normfb2.data import (
-    CASE_ENDINGS,
     CURRENCIES,
     DECIMAL_PLACES,
     EN_LETTER_NAMES,
@@ -232,14 +231,19 @@ def normalize_time(text: str) -> str:
 # --- Шаг 11: Дроби ---
 def normalize_fractions(text: str) -> str:
     # Числитель — количественное, знаменатель — порядковое в женском роде
-    fraction_names = {
-        "½": "одна́ втора́я",
-        "⅓": "одна́ тре́тья",
-        "¼": "одна́ четвё́ртая",
-        "¾": "три́ четвё́ртых",
-        "⅔": "две́ тре́тьих",
-    }
-    for ch, name in fraction_names.items():
+    from normfb2.data import VULGAR_FRACTIONS
+    from normfb2.roman import ordinal_text
+    from normfb2.utils import _feminine_last, number_to_words
+
+    for ch, (num, den) in VULGAR_FRACTIONS.items():
+        if den == 0:
+            continue
+        num_words = " ".join(_feminine_last(number_to_words(num).split()))
+        if num == 1:
+            den_words = ordinal_text(den, "nom_f")
+        else:
+            den_words = ordinal_text(den, "pl")
+        name = f"{num_words} {den_words}"
         text = text.replace(ch, name)
     return text
 
@@ -410,6 +414,7 @@ def normalize_acronyms(text: str, acro_dict: AcronymDict) -> Tuple[str, List[str
             return protect(pron) if pron else word
 
         text = re.sub(ru_pattern, ru_acro, text)
+    
     if acro_dict.acro_en:
         en_keys = sorted(acro_dict.acro_en.keys(), key=len, reverse=True)
         en_pattern = r"\b(?:" + "|".join(re.escape(k) for k in en_keys) + r")\b"
@@ -421,12 +426,52 @@ def normalize_acronyms(text: str, acro_dict: AcronymDict) -> Tuple[str, List[str
                 and word.upper() not in ROMAN_STOPLIST
             ):
                 return word
-            pron = acro_dict.get_pronunciation(word, "en")
-            return protect(pron) if pron else word
+            
+            en_pron, ru_pron = acro_dict.get_en_pronunciation(word)
+            
+            # Если ru есть, а en пустой — всегда русское произношение
+            if ru_pron and not en_pron:
+                return ru_pron
+            
+            if ru_pron and en_pron:
+                # Оба есть — проверяем контекст
+                start = m.start()
+                end = m.end()
+                left_char = ""
+                for i in range(start - 1, -1, -1):
+                    ch = text[i]
+                    if ch.isalpha() or ('а' <= ch.lower() <= 'я' or ch.lower() == 'ё'):
+                        left_char = ch
+                        break
+                    if ch not in " .,;:!?-\"'()":
+                        left_char = ch
+                        break
+                right_char = ""
+                for i in range(end, len(text)):
+                    ch = text[i]
+                    if ch.isalpha() or ('а' <= ch.lower() <= 'я' or ch.lower() == 'ё'):
+                        right_char = ch
+                        break
+                    if ch not in " .,;:!?-\"'()":
+                        right_char = ch
+                        break
+                near_cyrillic = (
+                    (left_char and ('а' <= left_char.lower() <= 'я' or left_char.lower() == 'ё')) or
+                    (right_char and ('а' <= right_char.lower() <= 'я' or right_char.lower() == 'ё'))
+                )
+                if near_cyrillic:
+                    return ru_pron
+                else:
+                    return protect(en_pron)
+            
+            if en_pron:
+                return protect(en_pron)
+            
+            return word
 
         text = re.sub(en_pattern, en_acro, text)
+    
     return text, protected
-
 
 # --- Шаг 17: Имена правителей с римскими цифрами ---
 
@@ -435,6 +480,7 @@ def normalize_acronyms(text: str, acro_dict: AcronymDict) -> Tuple[str, List[str
 def normalize_roman_generic(words: list, gaps: list, acro_dict=None) -> tuple:
     import unicodedata
 
+    from normfb2.data import GREEK_LETTER_NAMES, LETTER_NAMES
     from normfb2.roman import (
         RE_ROMAN,
         ROMAN_STOPLIST,
@@ -443,7 +489,6 @@ def normalize_roman_generic(words: list, gaps: list, acro_dict=None) -> tuple:
         roman_to_int,
     )
     from normfb2.utils import number_to_words
-    from normfb2.data import LETTER_NAMES, GREEK_LETTER_NAMES
 
     def spell_letters(letters: str) -> str:
         """Произносит буквы (латиница, греческие)"""
@@ -519,7 +564,6 @@ def normalize_roman_generic(words: list, gaps: list, acro_dict=None) -> tuple:
         "у": "gen",
         "для": "gen",
         "без": "gen",
-        "ме́жду": "instr",
         "между": "instr",
     }
 
@@ -551,7 +595,7 @@ def normalize_roman_generic(words: list, gaps: list, acro_dict=None) -> tuple:
             next_w = words[i + 1]
             w_rom = RE_ROMAN.match(w) and is_valid_roman(w)
             nw_rom = RE_ROMAN.match(next_w) and is_valid_roman(next_w)
-            
+
             if w_rom and nw_rom:
                 # Обе римские
                 if len(w) == 1 and len(next_w) == 1:
@@ -569,7 +613,7 @@ def normalize_roman_generic(words: list, gaps: list, acro_dict=None) -> tuple:
                 # Не-римская + что-то → пропускаем
                 i += 1
                 continue
-        
+
         if i > 0 and gaps[i] in ("-", "–", "—"):
             # Вторая часть дефисной конструкции — всегда пропускаем
             i += 1
@@ -579,22 +623,27 @@ def normalize_roman_generic(words: list, gaps: list, acro_dict=None) -> tuple:
         if len(w) == 1 and w.upper() in "IVXLCDM":
             # Проверим: это инициал? (после точка и ещё буква с точкой)
             is_initials = False
-            if (i + 1 < len(gaps) and gaps[i + 1].startswith(".") and 
-                i + 1 < len(words) and len(words[i + 1]) == 1 and words[i + 1].isalpha()):
+            if (
+                i + 1 < len(gaps)
+                and gaps[i + 1].startswith(".")
+                and i + 1 < len(words)
+                and len(words[i + 1]) == 1
+                and words[i + 1].isalpha()
+            ):
                 if i + 2 < len(gaps) and gaps[i + 2].startswith("."):
                     is_initials = True
-            
+
             if is_initials:
                 i += 1
                 continue
-            
+
             # Проверим наличие латиницы вокруг
             has_latin = False
             for offset in range(-3, 4):
                 idx = i + offset
                 if 0 <= idx < len(words) and offset != 0:
                     word = words[idx]
-                    if ':' in word:
+                    if ":" in word:
                         continue
                     # Пропускаем другие одиночные римские цифры
                     if len(word) == 1 and word.upper() in "IVXLCDM":
@@ -624,7 +673,15 @@ def normalize_roman_generic(words: list, gaps: list, acro_dict=None) -> tuple:
 
         # Проверяем ссылочные слова перед римской
         prev_clean = prev_word.lower().rstrip(".")
-        prev_clean = "".join(c for c in unicodedata.normalize("NFD", prev_clean) if not unicodedata.combining(c)) if prev_word else ""
+        prev_clean = (
+            "".join(
+                c
+                for c in unicodedata.normalize("NFD", prev_clean)
+                if not unicodedata.combining(c)
+            )
+            if prev_word
+            else ""
+        )
         if prev_clean in ref_words:
             ref_text = ref_words[prev_clean]
             words[i] = number_to_words(num)
@@ -688,8 +745,12 @@ def normalize_roman_generic(words: list, gaps: list, acro_dict=None) -> tuple:
         case = None
 
         # Сначала проверим: если перед римской предлог
-        if prev_w.lower() in prep_cases:
-            prep_case = prep_cases[prev_w.lower()]
+        prev_w_clean = "".join(
+            c for c in unicodedata.normalize("NFD", prev_w.lower())
+            if not unicodedata.combining(c)
+        )
+        if prev_w_clean in prep_cases:
+            prep_case = prep_cases[prev_w_clean]
             if next_word.lower() in prep_cases:
                 # "с I по V век" — для первой римской используем падеж первого предлога
                 case = prep_case
@@ -712,7 +773,15 @@ def normalize_roman_generic(words: list, gaps: list, acro_dict=None) -> tuple:
 
         # Если следующее слово — предлог ("по", "до")
         # Тогда ищем падеж дальше
-        if next_word.lower() in prep_cases and len(next_word) <= 3:
+        if (
+            "".join(
+                c
+                for c in unicodedata.normalize("NFD", next_word.lower())
+                if not unicodedata.combining(c)
+            )
+            in prep_cases
+            and len(next_word) <= 3
+        ):
             lookahead = i + 2
             if (
                 lookahead < len(words)
@@ -791,7 +860,12 @@ def normalize_alphanumeric(words: list, gaps: list) -> tuple:
 
     def spell_letters(letters: str) -> str:
         # Если это многосимвольная римская цифра (II, VIII) — не разбираем по буквам
-        if len(letters) > 1 and RE_ROMAN.match(letters) and is_valid_roman(letters) and letters.upper() not in ROMAN_STOPLIST:
+        if (
+            len(letters) > 1
+            and RE_ROMAN.match(letters)
+            and is_valid_roman(letters)
+            and letters.upper() not in ROMAN_STOPLIST
+        ):
             return number_to_words(roman_to_int(letters))
         result = []
         for ch in letters:
@@ -856,14 +930,12 @@ def normalize_alphanumeric(words: list, gaps: list) -> tuple:
 
         # Дефисные конструкции: только односимвольные буквы (I-D, V-Δ)
         # Длинные латинские слова (MS-DOS, Gerichtetsein-auf) не трогаем
-        if (
-            i + 1 < len(words)
-            and gaps[i + 1] in ("-", "–", "—")
-        ):
+        if i + 1 < len(words) and gaps[i + 1] in ("-", "–", "—"):
             next_w = words[i + 1]
             # Пропускаем если хотя бы одна часть содержит кириллицу (уже число)
-            if (any('а' <= c.lower() <= 'я' or c.lower() == 'ё' for c in w) or
-                any('а' <= c.lower() <= 'я' or c.lower() == 'ё' for c in next_w)):
+            if any("а" <= c.lower() <= "я" or c.lower() == "ё" for c in w) or any(
+                "а" <= c.lower() <= "я" or c.lower() == "ё" for c in next_w
+            ):
                 i += 2
                 continue
             # Обрабатываем только если обе части односимвольные буквы
