@@ -429,12 +429,318 @@ def normalize_acronyms(text: str, acro_dict: AcronymDict) -> Tuple[str, List[str
 
 
 # --- Шаг 17: Имена правителей с римскими цифрами ---
-def normalize_rulers(words: list, gaps: list, acro_dict: AcronymDict) -> tuple:
+
+
+# --- Новый шаг: Римские цифры (века, диапазоны, ссылки) ---
+def normalize_roman_generic(words: list, gaps: list, acro_dict=None) -> tuple:
     import unicodedata
 
+    from normfb2.roman import (
+        RE_ROMAN,
+        ROMAN_STOPLIST,
+        is_valid_roman,
+        ordinal_text,
+        roman_to_int,
+    )
+    from normfb2.utils import number_to_words
+    from normfb2.data import LETTER_NAMES, GREEK_LETTER_NAMES
+
+    def spell_letters(letters: str) -> str:
+        """Произносит буквы (латиница, греческие)"""
+        result = []
+        for ch in letters:
+            name = LETTER_NAMES.get(ch.lower())
+            if name:
+                result.append(name)
+            elif ch in GREEK_LETTER_NAMES:
+                result.append(GREEK_LETTER_NAMES[ch])
+            else:
+                result.append(ch.lower())
+        return "-".join(result)
+
+    # Падежи для слов "век"
+    def detect_case(w, is_range=False):
+        w_clean = __import__("re").sub(r"[)!?;:]+$", "", w)
+        w_norm = "".join(
+            c
+            for c in unicodedata.normalize("NFD", w_clean)
+            if not unicodedata.combining(c)
+        )
+        # Омограф "века": ед.ч. род. "ве́ка" (ударение на Е) vs мн.ч. им. "века́" (ударение на А)
+        if w_norm == "века":
+            # Проверяем ударение в исходном слове
+            if "́" in w_clean:
+                # Есть ударение. Если на последней "а" — мн.ч., но числительные в ед.ч.
+                if w_clean.endswith("а́") or w_clean.endswith("а́"):
+                    return "nom_m"
+                else:
+                    return "gen"
+            # Нет ударения — для диапазона обычно род. падеж (IV-V ве́ка)
+            return "gen" if is_range else "gen"
+        if w_norm == "веков":
+            return "pl"  # gen_pl = pl (пя́тых)
+        if w_norm == "векам":
+            return "dat"
+        if w_norm == "веками":
+            return "instr"
+        if w_norm == "веках":
+            return "prep"
+        cases = {
+            "век": "nom_m",
+            "веку": "dat",
+            "века": "gen",
+            "веке": "prep",
+            "веком": "instr",
+        }
+        if w_norm in cases:
+            return cases[w_norm]
+        if w_norm in ("вв.", "вв"):
+            return "nom_m"
+        if w_norm in ("в.", "в"):
+            return "nom_m"
+        return None
+
+    # Предлоги и требуемые падежи
+    prep_cases = {
+        "в": "prep",
+        "во": "prep",
+        "на": "prep",
+        "о": "prep",
+        "об": "prep",
+        "при": "prep",
+        "к": "dat",
+        "ко": "dat",
+        "по": "dat",
+        "с": "gen",
+        "со": "gen",
+        "от": "gen",
+        "до": "gen",
+        "из": "gen",
+        "у": "gen",
+        "для": "gen",
+        "без": "gen",
+        "ме́жду": "instr",
+        "между": "instr",
+    }
+
+    # Ссылочные слова перед римской цифрой
+    ref_words = {
+        "кн": "кни́га",
+        "т": "то́м",
+        "ч": "ча́сть",
+        "гл": "глава́",
+        "разд": "разде́л",
+    }
+
+    i = 0
+    while i < len(words):
+        w = words[i]
+
+        # Пропускаем не-римские
+        if not (
+            w
+            and RE_ROMAN.match(w)
+            and is_valid_roman(w)
+            and w.upper() not in ROMAN_STOPLIST
+        ):
+            i += 1
+            continue
+
+        # Дефисные конструкции:
+        if i + 1 < len(words) and gaps[i + 1] in ("-", "–", "—"):
+            next_w = words[i + 1]
+            w_rom = RE_ROMAN.match(w) and is_valid_roman(w)
+            nw_rom = RE_ROMAN.match(next_w) and is_valid_roman(next_w)
+            
+            if w_rom and nw_rom:
+                # Обе римские
+                if len(w) == 1 and len(next_w) == 1:
+                    # Обе односимвольные → буквы (I-D, V-X), пропускаем
+                    i += 1
+                    continue
+                # Диапазон (V-VIII, IV-X) — не пропускаем, обработаем ниже
+            elif w_rom and not nw_rom:
+                # Римская + не-римская → число + буква (II-В, I-Δ)
+                words[i] = number_to_words(roman_to_int(w))
+                words[i + 1] = spell_letters(next_w)
+                i += 2
+                continue
+            else:
+                # Не-римская + что-то → пропускаем
+                i += 1
+                continue
+        
+        if i > 0 and gaps[i] in ("-", "–", "—"):
+            # Вторая часть дефисной конструкции — всегда пропускаем
+            i += 1
+            continue
+
+        # Пропускаем одиночные римские если это инициалы (V. I. Lenin)
+        if len(w) == 1 and w.upper() in "IVXLCDM":
+            # Проверим: это инициал? (после точка и ещё буква с точкой)
+            is_initials = False
+            if (i + 1 < len(gaps) and gaps[i + 1].startswith(".") and 
+                i + 1 < len(words) and len(words[i + 1]) == 1 and words[i + 1].isalpha()):
+                if i + 2 < len(gaps) and gaps[i + 2].startswith("."):
+                    is_initials = True
+            
+            if is_initials:
+                i += 1
+                continue
+            
+            # Проверим наличие латиницы вокруг
+            has_latin = False
+            for offset in range(-3, 4):
+                idx = i + offset
+                if 0 <= idx < len(words) and offset != 0:
+                    word = words[idx]
+                    if ':' in word:
+                        continue
+                    # Пропускаем другие одиночные римские цифры
+                    if len(word) == 1 and word.upper() in "IVXLCDM":
+                        continue
+                    # Пропускаем слова которые сами римские цифры
+                    if RE_ROMAN.match(word) and is_valid_roman(word):
+                        continue
+                    if any(c.isascii() and c.isalpha() for c in word):
+                        has_latin = True
+                        break
+            if has_latin:
+                i += 1
+                continue
+
+        roman_str = w
+        num = roman_to_int(roman_str)
+
+        # Проверяем, не имя ли правителя перед римской
+        prev_word = words[i - 1] if i > 0 else ""
+        # Проверим что между именем и римской только пробел (не скобки)
+        if acro_dict and prev_word and gaps[i].strip() == "":
+            ruler_form = acro_dict.get_ruler_form(prev_word)
+            if ruler_form:
+                # Это имя правителя — пропускаем, обработается в normalize_rulers
+                i += 1
+                continue
+
+        # Проверяем ссылочные слова перед римской
+        prev_clean = prev_word.lower().rstrip(".")
+        prev_clean = "".join(c for c in unicodedata.normalize("NFD", prev_clean) if not unicodedata.combining(c)) if prev_word else ""
+        if prev_clean in ref_words:
+            ref_text = ref_words[prev_clean]
+            words[i] = number_to_words(num)
+            words[i - 1] = ref_text
+            # Убираем точку из зазора между ссылкой и цифрой
+            if gaps[i].startswith("."):
+                gaps[i] = gaps[i][1:]
+            # Убираем точку из зазора после цифры (если есть)
+            if i + 1 < len(gaps) and gaps[i + 1].startswith("."):
+                gaps[i + 1] = gaps[i + 1][1:]
+            i += 1
+            continue
+
+        # Ищем диапазон
+        range_end = i
+        while (
+            range_end + 1 < len(words)
+            and gaps[range_end + 1] in ("–", "—", "-")
+            and RE_ROMAN.match(words[range_end + 1])
+            and is_valid_roman(words[range_end + 1])
+        ):
+            range_end += 1
+
+        if range_end > i:
+            # Диапазон: ищем падеж по слову после диапазона
+            next_idx = range_end + 1
+            next_word = words[next_idx] if next_idx < len(words) else ""
+            case = detect_case(next_word, is_range=True) if next_word else None
+
+            if case:
+                # Определяем форму для каждой части диапазона
+                for j in range(i, range_end + 1):
+                    n = roman_to_int(words[j])
+                    words[j] = ordinal_text(n, case)
+                # Добавляем ударение в слово после диапазона если нужно
+                if next_word:
+                    stress_map = {
+                        "века": "ве́ка" if case == "gen" else "века́",
+                        "веков": "веко́в",
+                        "векам": "века́м",
+                        "веками": "века́ми",
+                        "веках": "века́х",
+                    }
+                    if next_word in stress_map:
+                        words[next_idx] = stress_map[next_word]
+                i = range_end + 1
+                continue
+            else:
+                # Диапазон без падежного слова — просто числа
+                for j in range(i, range_end + 1):
+                    n = roman_to_int(words[j])
+                    words[j] = number_to_words(n)
+                i = range_end + 1
+                continue
+
+        # Одиночная римская цифра
+        next_word = words[i + 1] if i + 1 < len(words) else ""
+        prev_w = words[i - 1] if i > 0 else ""
+
+        # Определяем падеж
+        case = None
+
+        # Сначала проверим: если перед римской предлог
+        if prev_w.lower() in prep_cases:
+            prep_case = prep_cases[prev_w.lower()]
+            if next_word.lower() in prep_cases:
+                # "с I по V век" — для первой римской используем падеж первого предлога
+                case = prep_case
+            else:
+                case = detect_case(next_word)
+                if not case:
+                    case = prep_case
+        elif next_word:
+            # Без предлога — падеж от следующего слова
+            case = detect_case(next_word)
+
+        if case:
+            words[i] = ordinal_text(num, case)
+            # Если next_word — "век/века/веку/..." — пропускаем его
+            if next_word and detect_case(next_word):
+                i += 2
+            else:
+                i += 1
+            continue
+
+        # Если следующее слово — предлог ("по", "до")
+        # Тогда ищем падеж дальше
+        if next_word.lower() in prep_cases and len(next_word) <= 3:
+            lookahead = i + 2
+            if (
+                lookahead < len(words)
+                and RE_ROMAN.match(words[lookahead])
+                and is_valid_roman(words[lookahead])
+            ):
+                lookahead += 1
+            if lookahead < len(words):
+                case = detect_case(words[lookahead])
+                if case:
+                    words[i] = ordinal_text(num, case)
+                    i += 1
+                    continue
+
+        # Fallback: римская цифра без контекста → количественное числительное
+        words[i] = number_to_words(num)
+        i += 1
+
+    return words, gaps
+
+
+def normalize_rulers(words: list, gaps: list, acro_dict: AcronymDict) -> tuple:
+    import re
+    import unicodedata
+
+    from normfb2.roman import ordinal_text, roman_to_int
     from normfb2.utils import detokenize_words_gaps, tokenize_words_gaps
 
-    # Имена правителей — regex по тексту
     text = detokenize_words_gaps(words, gaps)
 
     def repl_ruler(m):
@@ -476,157 +782,17 @@ def normalize_rulers(words: list, gaps: list, acro_dict: AcronymDict) -> tuple:
         return f"{name} {ordinal_text(roman_to_int(roman), detected)}"
 
     text = re.sub(r"\b([А-ЯЁа-яё̀-ͯ]+)\s+([IVXLCDM]+)\b", repl_ruler, text)
-    words, gaps = tokenize_words_gaps(text)
-
-    def detect_case(w):
-        w_clean = re.sub(r"[)!?;:]+$", "", w)
-        w_norm = "".join(
-            c
-            for c in unicodedata.normalize("NFD", w_clean)
-            if not unicodedata.combining(c)
-        )
-        if w_norm == "веков":
-            return "pl"
-        if w_norm == "века":
-            if "\u0301" in w_clean and w_clean.endswith("\u0301"):
-                return "nom_pl"
-            return "gen"
-        if w_norm == "веку":
-            return "dat"
-        if w_norm == "веке":
-            return "prep"
-        if w_norm == "веком":
-            return "instr"
-        if w_norm == "вв." or w_clean == "вв." or w_norm == "вв":
-            return "nom_pl"
-        if w_norm in ("век", "в.", "в") or w_clean in ("в.", "в"):
-            return "nom_m"
-        return None
-
-    # Ищем диапазоны и определяем падеж по последнему слову
-    range_case = {}
-    i = 0
-    while i < len(words):
-        w = words[i]
-        # Защита: предлог "в" не трогаем
-        if w.lower() == "в" and len(w) == 1:
-            i += 1
-            continue
-        if (
-            w
-            and RE_ROMAN.match(w)
-            and is_valid_roman(w)
-            and w.upper() not in ROMAN_STOPLIST
-        ):
-            # Проверим диапазон
-            j = i + 1
-            while j < len(words):
-                if (
-                    gaps[j] in ("–", "—", "-")
-                    and j < len(words)
-                    and RE_ROMAN.match(words[j])
-                    and is_valid_roman(words[j])
-                ):
-                    j += 1
-                else:
-                    break
-            if j > i + 1:
-                # Нашли диапазон — ищем падеж после
-                if j < len(words):
-                    case = detect_case(words[j])
-                    if case:
-                        range_case[j - 1] = case
-                i = j
-                continue
-        i += 1
-
-    # Заменяем
-    i = 0
-    while i < len(words):
-        w = words[i]
-        # Защита: предлог "в" не трогаем
-        if w.lower() == "в" and len(w) == 1:
-            i += 1
-            continue
-        if (
-            w
-            and RE_ROMAN.match(w)
-            and is_valid_roman(w)
-            and w.upper() not in ROMAN_STOPLIST
-        ):
-            roman_str = w
-            num = roman_to_int(roman_str)
-
-            # Конец диапазона
-            if i in range_case:
-                words[i] = ordinal_text(num, range_case[i])
-                i += 1
-                continue
-
-            # Начало диапазона
-            if i + 1 < len(words) and gaps[i + 1] in ("–", "—", "-"):
-                case = None
-                for end_idx, c in sorted(range_case.items()):
-                    if end_idx > i:
-                        case = c
-                        break
-                words[i] = ordinal_text(num, case or "nom_m")
-                i += 1
-                continue
-
-            # Одиночная — ищем падеж по следующему слову
-            next_word = words[i + 1] if i + 1 < len(words) else ""
-            if next_word and "." in gaps[i + 1]:
-                next_word += "."
-
-            if len(roman_str) == 1:
-                # Номер тома/книги после Кн./Т./Ч. → число
-                if i > 0 and "".join(
-                    c for c in words[i - 1].lower() if c.isalpha()
-                ) in (
-                    "кн",
-                    "книга",
-                    "т",
-                    "том",
-                    "ч",
-                    "часть",
-                    "разд",
-                    "раздел",
-                    "гл",
-                    "глава",
-                ):
-                    words[i] = str(num)
-                    i += 1
-                    continue
-                if gaps[i + 1].startswith("."):
-                    pass  # инициал
-                elif next_word and next_word.isdigit():
-                    words[i] = str(num)
-                elif next_word == "в.":
-                    words[i] = ordinal_text(num, "nom_m")
-                elif not next_word:
-                    words[i] = str(num)
-                else:
-                    case = detect_case(next_word) if next_word else None
-                    if case:
-                        words[i] = ordinal_text(num, case)
-            else:
-                case = detect_case(next_word) if next_word else None
-                if case:
-                    words[i] = ordinal_text(num, case)
-                else:
-                    words[i] = str(num)
-        i += 1
-
-    return words, gaps
+    return tokenize_words_gaps(text)
 
 
-# --- Шаг 18: Буквенно-цифровые обозначения ---
 def normalize_alphanumeric(words: list, gaps: list) -> tuple:
     from normfb2.roman import roman_to_int
     from normfb2.utils import detokenize_words_gaps
 
     def spell_letters(letters: str) -> str:
+        # Если это многосимвольная римская цифра (II, VIII) — не разбираем по буквам
+        if len(letters) > 1 and RE_ROMAN.match(letters) and is_valid_roman(letters) and letters.upper() not in ROMAN_STOPLIST:
+            return number_to_words(roman_to_int(letters))
         result = []
         for ch in letters:
             name = LETTER_NAMES.get(ch.lower())
@@ -636,7 +802,7 @@ def normalize_alphanumeric(words: list, gaps: list) -> tuple:
                 result.append(GREEK_LETTER_NAMES[ch])
             else:
                 result.append(ch.lower())
-        return " ".join(result)
+        return "-".join(result)
 
     i = 0
     while i < len(words):
@@ -688,15 +854,26 @@ def normalize_alphanumeric(words: list, gaps: list) -> tuple:
             i += 1
             continue
 
-        # Римская цифра перед дефисом: I-D → оди́н-дэ
+        # Дефисные конструкции: только односимвольные буквы (I-D, V-Δ)
+        # Длинные латинские слова (MS-DOS, Gerichtetsein-auf) не трогаем
         if (
-            len(w) == 1
-            and w in "IVXLCDM"
-            and i + 1 < len(words)
+            i + 1 < len(words)
             and gaps[i + 1] in ("-", "–", "—")
         ):
-            words[i] = number_to_words(roman_to_int(w))
-            i += 1
+            next_w = words[i + 1]
+            # Пропускаем если хотя бы одна часть содержит кириллицу (уже число)
+            if (any('а' <= c.lower() <= 'я' or c.lower() == 'ё' for c in w) or
+                any('а' <= c.lower() <= 'я' or c.lower() == 'ё' for c in next_w)):
+                i += 2
+                continue
+            # Обрабатываем только если обе части односимвольные буквы
+            if len(w) == 1 and len(next_w) == 1 and w.isalpha() and next_w.isalpha():
+                words[i] = spell_letters(w)
+                words[i + 1] = spell_letters(next_w)
+                i += 2
+                continue
+            # Всё остальное пропускаем
+            i += 2
             continue
 
         # Буквы-цифры через дефис: А-123 → а сто двадцать три
@@ -707,7 +884,9 @@ def normalize_alphanumeric(words: list, gaps: list) -> tuple:
             # Считаем буквы без диакритики
             letters_only = [c for c in w if c.isalpha()]
             is_short = len(letters_only) <= 2
-            is_acronym = len(letters_only) >= 2 and all(c.isupper() for c in letters_only)
+            is_acronym = len(letters_only) >= 2 and all(
+                c.isupper() for c in letters_only
+            )
             if is_short or is_acronym:
                 if (
                     i + 1 < len(words)
@@ -899,13 +1078,15 @@ def normalize_language_tags(text: str, acro_dict) -> str:
         if not block or not re.search(r"[a-zA-Z]{3,}", block):
             return m.group(0)
         processed = block
+        # Одиночные буквы с точкой: только если не инициалы
         processed = re.sub(
-            r"\b([B-DF-HJ-NP-TV-Z])\.",
+            r"\b([B-DF-HJ-NP-TV-Z])\.(?!\s*[A-Z]\.)",
             lambda m: EN_LETTER_NAMES.get(m.group(1), m.group(1).lower()),
             processed,
         )
+        # Одиночные буквы без точки (не инициалы)
         processed = re.sub(
-            r"\b([B-DF-HJ-NP-TV-Z])\b",
+            r"\b([B-DF-HJ-NP-TV-Z])\b(?!\.)",
             lambda m: EN_LETTER_NAMES.get(m.group(1), m.group(1).lower()),
             processed,
         )

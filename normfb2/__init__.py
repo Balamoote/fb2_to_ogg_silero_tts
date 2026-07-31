@@ -28,6 +28,7 @@ from normfb2.data import (
 )
 
 from normfb2.steps import (
+    normalize_roman_generic,
     COMBINING_DIACRITICAL, RUSSIAN_CHAR, TAG_EN_OPEN, TAG_EN_CLOSE,
     PROTECT_MARKER_PREFIX, PROTECT_MARKER_SUFFIX,
     normalize_typography, normalize_web, normalize_regex_dict,
