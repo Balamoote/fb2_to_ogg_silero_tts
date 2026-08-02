@@ -66,6 +66,8 @@ def normalize_typography(text: str) -> str:
     text = re.sub(r"\*\*|__|`", "", text)
     for old, new in TYPOGRAPHY_REPLACEMENTS.items():
         text = text.replace(old, new)
+    # Преобразование формата +а → а́ (ударение после гласной)
+    text = re.sub(r"([аеёиоуыэюяАЕЁИОУЫЭЮЯ])\+", r"\1\u0301", text)
     return text
 
 
