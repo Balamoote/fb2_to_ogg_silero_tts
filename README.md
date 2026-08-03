@@ -28,14 +28,14 @@
 - Калибровка громкости между голосами
 - Сноски с настраиваемым префиксом/суффиксом
 - Потоковая обработка с разбивкой на части
-- Постобработка через ffmpeg-фильтры (по желанию)
+- Постобработка через pedalboard или ffmpeg-фильтры (по желанию)
 
 ## Требования
 
 - Python 3.10+
 - ffmpeg (системная зависимость)
 - Для fb2_to_ogg.py: torch torchaudio torchcodec silero-tts numpy pyyaml pedalboard scipy
-- Для normalize_fb2.py: regex
+- Для normalize_fb2.py: regex pyyaml
 
 ## Быстрый старт
 
@@ -48,7 +48,7 @@ uv venv
 source .venv/bin/activate
 
 # Зависимости для нормализации (минимальные)
-uv pip install regex
+uv pip install regex pyyaml
 
 # Зависимости для озвучки (добавить при необходимости)
 uv pip install torch torchaudio torchcodec silero-tts numpy pyyaml pedalboard scipy
@@ -76,7 +76,7 @@ python normalize_fb2.py --help          # посмотреть список кл
 ### Озвучка
 
 ```bash
-python fb2_to_ogg.py book.norm.fb2      # создать book.ogg
+python fb2_to_ogg.py book.norm.fb2      # создать book.norm.ogg
 python fb2_to_ogg.py --help             # посмотреть список ключей и помощь
 ```
 

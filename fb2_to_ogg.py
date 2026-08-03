@@ -11,7 +11,7 @@ TTS конвертер FB2 в аудио (OGG/WAV) с поддержкой сн�
   python normalize_fb2.py book.fb2
 """
 
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 
 import argparse
 import gc
@@ -98,7 +98,7 @@ DEFAULT_CONFIG = {
     # Постобработка ffmpeg (эквалайзер/компрессор)
     "ffmpeg_filter": None,
     "vorbis_quality": 6,  # при ffmpeg_filter: битрейт opus = vorbis_quality * 32 kbps
-    "filter_threads": 4,  # потоков для аудиофильтров ffmpeg
+    "filter_threads": 4,  # потоков для аудиофильтров ffmpeg (не используется)
     # Постобработка pedalboard (рекомендуется)
     "pedalboard_enabled": False,
     "pedalboard_room_tone": 0,  # уровень комнатного шума dB (0 = выкл)
@@ -183,13 +183,7 @@ RU_SPEAKERS_CIS = [
 
 
 def save_audio(audio: np.ndarray, filepath: str, sample_rate: int):
-    """Сохраняет аудио в файл."""
-    try:
-        import soundfile as sf
-        sf.write(filepath, audio, sample_rate)
-        return True
-    except ImportError:
-        pass
+    """Сохраняет аудио в файл (torchaudio с torchcodec)."""
     try:
         audio_tensor = (
             torch.from_numpy(audio).float().unsqueeze(0)
@@ -260,7 +254,10 @@ def run_ffmpeg(args: List[str], description: str = "") -> bool:
 
 
 def concat_ogg_files(
-    input_files: List[Path], output_file: str, ffmpeg_filter: str = None, vorbis_quality: int = 6
+    input_files: List[Path],
+    output_file: str,
+    ffmpeg_filter: str = None,
+    vorbis_quality: int = 6,
 ) -> bool:
     """Склеивает OGG файлы через ffmpeg с опциональной постобработкой."""
     concat_file = Path(output_file).with_suffix(".concat.txt")
@@ -1258,7 +1255,12 @@ class FB2ToAudioConverter:
 
             logger.info(f"Склейка {len(part_files)} OGG-частей...")
             ffmpeg_filter = self.config.get("ffmpeg_filter")
-            if not concat_ogg_files(part_files, output_file, ffmpeg_filter, self.config.get("vorbis_quality", 6)):
+            if not concat_ogg_files(
+                part_files,
+                output_file,
+                ffmpeg_filter,
+                self.config.get("vorbis_quality", 6),
+            ):
                 logger.error("Не удалось склеить части")
                 return False
 
@@ -1308,13 +1310,13 @@ def print_header(
     speed = config.get("speed", 1.0)
     ext_model = config.get("en_model", "v3_en")
     ext_speaker = config.get("en_speaker", "en_0")
-    emp_spk = config.get("emphasis_speaker") or ru_speaker
-    emp_speed = config.get("emphasis_speed", 1.0)
+    # emp_spk = config.get("emphasis_speaker") or ru_speaker
+    # emp_speed = config.get("emphasis_speed", 1.0)
     en_speed = config.get("en_speed", 1.0)
-    pp = config.get("pause_between_paragraphs", 0.2)
-    ps = config.get("pause_between_sentences", 0.05)
-    psc = config.get("pause_semicolon", 0.0)
-    pcl = config.get("pause_colon", 0.0)
+    # pp = config.get("pause_between_paragraphs", 0.2)
+    # ps = config.get("pause_between_sentences", 0.05)
+    # psc = config.get("pause_semicolon", 0.0)
+    # pcl = config.get("pause_colon", 0.0)
     skip_fn = config.get("skip_footnotes", False)
 
     def v(text):

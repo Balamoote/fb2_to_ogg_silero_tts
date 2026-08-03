@@ -3,21 +3,36 @@
 """
 
 import regex as re
+
 from normfb2.utils import number_to_words
 
 ROMAN_VALUES = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
 ROMAN_STOPLIST = {
-    "CD", "DVD", "MD", "DC", "MC", "MI", "MM",
-    "DI", "DIV", "MIX", "CIV", "LCD", "IL", "IC", "ID", "IM",
+    "CD",
+    "DVD",
+    "MD",
+    "DC",
+    "MC",
+    "MI",
+    "MM",
+    "DI",
+    "DIV",
+    "MIX",
+    "CIV",
+    "LCD",
+    "IL",
+    "IC",
+    "ID",
+    "IM",
 }
 CYRILLIC_TO_LATIN_ROMAN = {}
 
 RE_ROMAN = re.compile(r"\b([IVXLCDM]+)\b", re.IGNORECASE)
-RE_ROMAN_VALID = re.compile(r"^M{0,4}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})$")
+RE_ROMAN_VALID = re.compile(
+    r"^M{0,4}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})$"
+)
 
 from normfb2.data import ORDINAL_CASES
-
-
 
 
 def roman_to_int(s: str) -> int:
@@ -75,11 +90,15 @@ def ordinal_text(n: int, case: str = "nom_m") -> str:
                 elif w and w[-1] == "два́":
                     w[-1] = "две́"
                 count_str = " ".join(w)
-            parts.append(f"{count_str} {forms[0] if count % 10 == 1 and count % 100 != 11 else forms[1] if 2 <= count % 10 <= 4 and not 12 <= count % 100 <= 14 else forms[2]}")
+            parts.append(
+                f"{count_str} {forms[0] if count % 10 == 1 and count % 100 != 11 else forms[1] if 2 <= count % 10 <= 4 and not 12 <= count % 100 <= 14 else forms[2]}"
+            )
             remaining %= value
     if remaining > 0:
         parts.append(ordinal_text(remaining, case))
     elif parts:
         last = parts[-1]
-        parts[-1] = ordinal_text(int(last.split()[0]), case) + " " + " ".join(last.split()[1:])
+        parts[-1] = (
+            ordinal_text(int(last.split()[0]), case) + " " + " ".join(last.split()[1:])
+        )
     return " ".join(parts)

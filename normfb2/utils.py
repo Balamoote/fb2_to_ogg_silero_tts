@@ -8,7 +8,7 @@ import os
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
@@ -20,10 +20,54 @@ BOLD = "\033[1m"
 def number_to_words(n: int) -> str:
     if n == 0:
         return "но́ль"
-    units = ["", "оди́н", "два́", "три́", "четы́ре", "пя́ть", "ше́сть", "се́мь", "во́семь", "де́вять"]
-    teens = ["де́сять", "оди́ннадцать", "двена́дцать", "трина́дцать", "четы́рнадцать", "пятна́дцать", "шестна́дцать", "семна́дцать", "восемна́дцать", "девятна́дцать"]
-    tens = ["", "де́сять", "два́дцать", "три́дцать", "со́рок", "пятьдеся́т", "шестьдеся́т", "се́мьдесят", "во́семьдесят", "девяно́сто"]
-    hundreds = ["", "сто́", "две́сти", "три́ста", "четы́реста", "пятьсо́т", "шестьсо́т", "семьсо́т", "восемьсо́т", "девятьсо́т"]
+    units = [
+        "",
+        "оди́н",
+        "два́",
+        "три́",
+        "четы́ре",
+        "пя́ть",
+        "ше́сть",
+        "се́мь",
+        "во́семь",
+        "де́вять",
+    ]
+    teens = [
+        "де́сять",
+        "оди́ннадцать",
+        "двена́дцать",
+        "трина́дцать",
+        "четы́рнадцать",
+        "пятна́дцать",
+        "шестна́дцать",
+        "семна́дцать",
+        "восемна́дцать",
+        "девятна́дцать",
+    ]
+    tens = [
+        "",
+        "де́сять",
+        "два́дцать",
+        "три́дцать",
+        "со́рок",
+        "пятьдеся́т",
+        "шестьдеся́т",
+        "се́мьдесят",
+        "во́семьдесят",
+        "девяно́сто",
+    ]
+    hundreds = [
+        "",
+        "сто́",
+        "две́сти",
+        "три́ста",
+        "четы́реста",
+        "пятьсо́т",
+        "шестьсо́т",
+        "семьсо́т",
+        "восемьсо́т",
+        "девятьсо́т",
+    ]
     scales = [
         (10**15, ["квадриллио́н", "квадриллио́на", "квадриллио́нов"], False),
         (10**12, ["триллио́н", "триллио́на", "триллио́нов"], False),
@@ -51,7 +95,18 @@ def number_to_words(n: int) -> str:
         return [hundreds[num // 100]] + under_thousand(num % 100)
 
     if n >= 10**18:
-        digit_words = ["но́ль", "оди́н", "два́", "три́", "четы́ре", "пя́ть", "ше́сть", "се́мь", "во́семь", "де́вять"]
+        digit_words = [
+            "но́ль",
+            "оди́н",
+            "два́",
+            "три́",
+            "четы́ре",
+            "пя́ть",
+            "ше́сть",
+            "се́мь",
+            "во́семь",
+            "де́вять",
+        ]
         return " ".join(digit_words[int(d)] for d in str(n))
 
     words = []
@@ -89,19 +144,21 @@ def _plural(n, forms):
 
 from functools import lru_cache
 
+
 @lru_cache(maxsize=256)
 def tokenize_words_gaps(text: str) -> tuple:
     """Разбивает текст на слова и разделители.
     Возвращает (words, gaps) где gaps на 1 длиннее words.
     """
     import regex as re
-    pattern = r'([а-яёА-ЯЁ\u0300-\u036f]+|[a-zA-ZäöüßÄÖÜ]+|[IVXLCDM]+|\d+|[Α-Ωα-ω])'
+
+    pattern = r"([а-яёА-ЯЁ\u0300-\u036f]+|[a-zA-ZäöüßÄÖÜ]+|[IVXLCDM]+|\d+|[Α-Ωα-ω])"
     parts = re.split(pattern, text)
-    
+
     words = []
     gaps = []
-    current_gap = ''
-    
+    current_gap = ""
+
     for part in parts:
         if not part:
             continue
@@ -109,10 +166,10 @@ def tokenize_words_gaps(text: str) -> tuple:
         if re.match(pattern, part):
             words.append(part)
             gaps.append(current_gap)
-            current_gap = ''
+            current_gap = ""
         else:
             current_gap += part
-    
+
     gaps.append(current_gap)
     return words, gaps
 
@@ -124,7 +181,7 @@ def detokenize_words_gaps(words: list, gaps: list) -> str:
         result.append(gap)
         result.append(word)
     result.append(gaps[-1])
-    return ''.join(result)
+    return "".join(result)
 
 
 class NormalizationLogger:
@@ -147,7 +204,9 @@ class NormalizationLogger:
                     except Exception:
                         pass
 
-    def add_replacement(self, step: str, original: str, normalized: str, context: str = ""):
+    def add_replacement(
+        self, step: str, original: str, normalized: str, context: str = ""
+    ):
         self.replacements[step].append((original, normalized, context))
         self.counters[step] += 1
 
@@ -166,10 +225,42 @@ class NormalizationLogger:
         csv_path = self.log_dir / f"normalization_log_{timestamp}.csv"
         with open(csv_path, "w", encoding="utf-8", newline="") as f:
             writer = csv.writer(f, quoting=csv.QUOTE_ALL)
-            writer.writerow(["Шаг", "Оригинал", "Нормализация", "Контекст", "Длина ориг.", "Длина норм."])
-            for step in sorted(self.replacements.keys(), key=lambda x: (0, float(str(x).split('.')[0])) if str(x)[0].isdigit() and str(x).replace('.','').replace('a','').replace('b','').isdigit() else (1, str(x))):
-                for original, normalized, context in sorted(self.replacements[step], key=lambda x: len(x[0]), reverse=True):
-                    writer.writerow([step, original.strip(), normalized.strip(), context.strip()[:100], len(original), len(normalized)])
+            writer.writerow(
+                [
+                    "Шаг",
+                    "Оригинал",
+                    "Нормализация",
+                    "Контекст",
+                    "Длина ориг.",
+                    "Длина норм.",
+                ]
+            )
+            for step in sorted(
+                self.replacements.keys(),
+                key=lambda x: (
+                    (0, float(str(x).split(".")[0]))
+                    if str(x)[0].isdigit()
+                    and str(x)
+                    .replace(".", "")
+                    .replace("a", "")
+                    .replace("b", "")
+                    .isdigit()
+                    else (1, str(x))
+                ),
+            ):
+                for original, normalized, context in sorted(
+                    self.replacements[step], key=lambda x: len(x[0]), reverse=True
+                ):
+                    writer.writerow(
+                        [
+                            step,
+                            original.strip(),
+                            normalized.strip(),
+                            context.strip()[:100],
+                            len(original),
+                            len(normalized),
+                        ]
+                    )
         print(f"{GREEN}✓ Детальный лог сохранён: {csv_path}{RESET}")
 
     def _write_summary_json(self, timestamp: str):
@@ -178,21 +269,51 @@ class NormalizationLogger:
             "timestamp": datetime.now().isoformat(),
             "total_processed": self.total_processed,
             "total_changed": self.total_changed,
-            "change_percentage": round(self.total_changed / max(self.total_processed, 1) * 100, 2),
-            "steps": {}
+            "change_percentage": round(
+                self.total_changed / max(self.total_processed, 1) * 100, 2
+            ),
+            "steps": {},
         }
-        for step in sorted(self.replacements.keys(), key=lambda x: (0, float(str(x).split('.')[0])) if str(x)[0].isdigit() and str(x).replace('.','').replace('a','').replace('b','').isdigit() else (1, str(x))):
+        for step in sorted(
+            self.replacements.keys(),
+            key=lambda x: (
+                (0, float(str(x).split(".")[0]))
+                if str(x)[0].isdigit()
+                and str(x).replace(".", "").replace("a", "").replace("b", "").isdigit()
+                else (1, str(x))
+            ),
+        ):
             replacements = self.replacements[step]
             replacement_freq = defaultdict(int)
             for orig, norm, ctx in replacements:
                 replacement_freq[f"{orig} → {norm}"] += 1
-            top_replacements = sorted(replacement_freq.items(), key=lambda x: x[1], reverse=True)[:10]
+            top_replacements = sorted(
+                replacement_freq.items(), key=lambda x: x[1], reverse=True
+            )[:10]
             summary["steps"][step] = {
                 "count": len(replacements),
                 "unique_patterns": len(replacement_freq),
-                "top_replacements": [{"pattern": pat, "count": cnt} for pat, cnt in top_replacements],
-                "avg_original_length": round(sum(len(orig) for orig, _, _ in replacements) / len(replacements), 1) if replacements else 0,
-                "avg_normalized_length": round(sum(len(norm) for _, norm, _ in replacements) / len(replacements), 1) if replacements else 0,
+                "top_replacements": [
+                    {"pattern": pat, "count": cnt} for pat, cnt in top_replacements
+                ],
+                "avg_original_length": (
+                    round(
+                        sum(len(orig) for orig, _, _ in replacements)
+                        / len(replacements),
+                        1,
+                    )
+                    if replacements
+                    else 0
+                ),
+                "avg_normalized_length": (
+                    round(
+                        sum(len(norm) for _, norm, _ in replacements)
+                        / len(replacements),
+                        1,
+                    )
+                    if replacements
+                    else 0
+                ),
             }
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
@@ -207,11 +328,15 @@ class NormalizationLogger:
             f.write("=" * 80 + "\n\n")
             f.write(f"Всего обработано элементов: {self.total_processed}\n")
             f.write(f"Изменено элементов: {self.total_changed}\n")
-            f.write(f"Процент изменений: {round(self.total_changed / max(self.total_processed, 1) * 100, 2)}%\n\n")
+            f.write(
+                f"Процент изменений: {round(self.total_changed / max(self.total_processed, 1) * 100, 2)}%\n\n"
+            )
             f.write("-" * 80 + "\n")
             f.write("СТАТИСТИКА ПО ШАГАМ (отсортировано по количеству замен)\n")
             f.write("-" * 80 + "\n\n")
-            sorted_steps = sorted(self.replacements.items(), key=lambda x: len(x[1]), reverse=True)
+            sorted_steps = sorted(
+                self.replacements.items(), key=lambda x: len(x[1]), reverse=True
+            )
             for step, replacements in sorted_steps:
                 f.write(f"Шаг {step}\n")
                 f.write(f"  Количество замен: {len(replacements)}\n")
@@ -219,22 +344,32 @@ class NormalizationLogger:
                     pattern_freq = defaultdict(list)
                     for orig, norm, ctx in replacements:
                         pattern_freq[f"{orig} → {norm}"].append(ctx)
-                    sorted_patterns = sorted(pattern_freq.items(), key=lambda x: len(x[1]), reverse=True)[:5]
+                    sorted_patterns = sorted(
+                        pattern_freq.items(), key=lambda x: len(x[1]), reverse=True
+                    )[:5]
                     f.write(f"  Топ-5 замен:\n")
                     for i, (pattern, contexts) in enumerate(sorted_patterns, 1):
-                        f.write(f"    {i}. {pattern} (встретилось {len(contexts)} раз)\n")
+                        f.write(
+                            f"    {i}. {pattern} (встретилось {len(contexts)} раз)\n"
+                        )
                         if contexts and contexts[0]:
                             f.write(f"       Контекст: ...{contexts[0][:80]}...\n")
                 f.write("\n")
             f.write("-" * 80 + "\n")
             f.write("ИТОГО ПО ВСЕМ ШАГАМ\n")
             f.write("-" * 80 + "\n")
-            total_orig_len = sum(len(orig) for reps in self.replacements.values() for orig, _, _ in reps)
-            total_norm_len = sum(len(norm) for reps in self.replacements.values() for _, norm, _ in reps)
+            total_orig_len = sum(
+                len(orig) for reps in self.replacements.values() for orig, _, _ in reps
+            )
+            total_norm_len = sum(
+                len(norm) for reps in self.replacements.values() for _, norm, _ in reps
+            )
             f.write(f"Суммарная длина оригиналов: {total_orig_len} символов\n")
             f.write(f"Суммарная длина после нормализации: {total_norm_len} символов\n")
             if total_orig_len > 0:
-                f.write(f"Изменение размера: {round((total_norm_len - total_orig_len) / total_orig_len * 100, 2)}%\n")
+                f.write(
+                    f"Изменение размера: {round((total_norm_len - total_orig_len) / total_orig_len * 100, 2)}%\n"
+                )
         print(f"{GREEN}✓ Читаемый отчёт сохранён: {report_path}{RESET}")
 
     def _write_en_phrases_log(self, timestamp: str):
@@ -263,7 +398,9 @@ class StatsCollector:
         if not self.stats:
             print(f"{YELLOW}  Нет изменений{RESET}")
             return
-        print(f"\n{BOLD}{YELLOW}Статистика замен по шагам (отсортировано по количеству):{RESET}")
+        print(
+            f"\n{BOLD}{YELLOW}Статистика замен по шагам (отсортировано по количеству):{RESET}"
+        )
         sorted_steps = sorted(self.stats.items(), key=lambda x: x[1], reverse=True)
         total = sum(count for _, count in sorted_steps)
         max_width = max(len(str(name)) for name, _ in sorted_steps)
@@ -272,13 +409,16 @@ class StatsCollector:
             bar_length = int(40 * count / max(total, 1))
             bar = "█" * bar_length + "░" * (40 - bar_length)
             percentage = round(count / max(total, 1) * 100, 1)
-            print(f"  {CYAN}{step_name:<{max_width}}{RESET} {YELLOW}{count:>6}{RESET}   {percentage:>5.1f}%")
+            print(
+                f"  {CYAN}{step_name:<{max_width}}{RESET} {YELLOW}{count:>6}{RESET}   {percentage:>5.1f}%"
+            )
         print(f"  {BOLD}{CYAN}{'─' * (max_width + 16)}{RESET}")
         print(f"  {BOLD}{'ВСЕГО':<{max_width}} {GREEN}{total:>6}{RESET}")
 
 
 def find_replacements(original: str, normalized: str) -> list:
     import regex as re
+
     replacements = []
     orig_words = re.findall(r"\S+", original)
     norm_words = re.findall(r"\S+", normalized)
@@ -292,13 +432,14 @@ def find_replacements(original: str, normalized: str) -> list:
     else:
         common_prefix_len = len(os.path.commonprefix([original, normalized]))
         context_start = max(0, common_prefix_len - 50)
-        context = original[context_start:context_start + 100]
+        context = original[context_start : context_start + 100]
         replacements.append((original[:100], normalized[:100], context))
     return replacements
 
 
 def apply_step(text: str, func, disabled: bool, stats, step_name: str, *args):
     import regex as re
+
     if disabled:
         return text
     result = func(text, *args) if args else func(text)
@@ -312,7 +453,7 @@ def apply_step(text: str, func, disabled: bool, stats, step_name: str, *args):
             for orig, norm, ctx in replacements:
                 stats.logger.add_replacement(step_name, orig, norm, ctx)
             if step_name == "28.Языковые теги":
-                en_phrases = re.findall(r'<tts_en>(.*?)</tts_en>', result)
+                en_phrases = re.findall(r"<tts_en>(.*?)</tts_en>", result)
                 for phrase in en_phrases:
                     stats.logger.add_en_phrase(phrase)
     return result

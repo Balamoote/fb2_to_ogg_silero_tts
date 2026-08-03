@@ -33,7 +33,6 @@ from normfb2.roman import (
     ROMAN_STOPLIST,
     is_valid_roman,
     ordinal_text,
-    roman_to_int,
 )
 from normfb2.utils import _feminine_last, _plural, number_to_words
 
@@ -59,6 +58,31 @@ def _read_tsv(name: str):
         for l in tsv.splitlines()
         if l.strip() and not l.strip().startswith("#")
     ]
+
+
+def _detect_year_case(w: str) -> str:
+    """Определяет падеж для слов 'год' (аналогично detect_case для 'век')"""
+    import unicodedata
+
+    w_clean = __import__("re").sub(r"[)!?;:]+$", "", w)
+    w_norm = "".join(
+        c for c in unicodedata.normalize("NFD", w_clean) if not unicodedata.combining(c)
+    )
+    cases = {
+        "год": "nom_m",
+        "года": "gen",
+        "году": "dat",
+        "годе": "prep",
+        "годом": "instr",
+        "годов": "pl",
+        "годам": "instr",
+        "годами": "instr",
+        "годах": "pl",
+        "гг": "nom_m",
+        "гг.": "nom_m",
+        "годы": "nom_m",
+    }
+    return cases.get(w_norm, None)
 
 
 # --- Шаг 1: Типографика ---
@@ -117,24 +141,36 @@ def normalize_number_groups(text: str) -> str:
 
 # --- Шаг 7: Диапазоны ---
 def normalize_ranges(words: list, gaps: list) -> tuple:
+
     i = 0
     while i < len(words):
         if words[i].isdigit() and i + 1 < len(words) and gaps[i + 1] in ("–", "—", "-"):
             n1 = int(words[i])
             if words[i + 1].isdigit():
                 n2 = int(words[i + 1])
-                # Проверим "гг." или "годы" после
-                has_gg = i + 2 < len(words) and words[i + 2].lower().rstrip(".") in (
-                    "гг",
-                    "годы",
+                next_word = words[i + 2] if i + 2 < len(words) else ""
+                case = (
+                    _detect_year_case(next_word.lower().rstrip("."))
+                    if next_word
+                    else None
                 )
-                if has_gg:
-                    words[i] = ordinal_text(n1, "nom_m")
-                    words[i + 1] = ordinal_text(n2, "nom_m") + " го́ды"
-                    words[i + 2] = ""
-                    gaps[i + 2] = (
-                        ""  # убираем пробел перед "гг"  # убираем точку из гг.
-                    )
+
+                if case:
+                    words[i] = ordinal_text(n1, case)
+                    words[i + 1] = ordinal_text(n2, case)
+                    # Убираем "одна́" перед "ты́сяча"
+                    words[i] = words[i].replace("одна́ ты́сяча", "ты́сяча")
+                    words[i + 1] = words[i + 1].replace("одна́ ты́сяча", "ты́сяча")
+                    # Добавляем ударение в next_word
+                    stress_map = {
+                        "года": "го́да" if case == "gen" else "года́",
+                        "годов": "годо́в",
+                        "годам": "года́м",
+                        "годами": "года́ми",
+                        "годах": "года́х",
+                    }
+                    if next_word.lower().rstrip(".") in stress_map:
+                        words[i + 2] = stress_map[next_word.lower().rstrip(".")]
                 else:
                     words[i] = number_to_words(n1)
                     gaps[i + 1] = " "
@@ -145,7 +181,6 @@ def normalize_ranges(words: list, gaps: list) -> tuple:
             i += 1
             continue
         i += 1
-    # Убираем пустые слова
     return words, gaps
 
 
@@ -252,11 +287,18 @@ def normalize_fractions(text: str) -> str:
 
 # --- Шаг 12: Проценты ---
 def normalize_percent(text: str) -> str:
-    return re.sub(
+    # % и ‱ (базисный пункт)
+    text = re.sub(
         r"(\d+)\s*%",
         lambda m: f"{number_to_words(int(m.group(1)))} {_plural(int(m.group(1)), ['проце́нт', 'проце́нта', 'проце́нтов'])}",
         text,
     )
+    text = re.sub(
+        r"(\d+)\s*‱",
+        lambda m: f"{number_to_words(int(m.group(1)))} {_plural(int(m.group(1)), ['ба́зисный пу́нкт', 'ба́зисных пу́нкта', 'ба́зисных пу́нктов'])}",
+        text,
+    )
+    return text
 
 
 # --- Шаг 13: Множители ---
@@ -416,7 +458,7 @@ def normalize_acronyms(text: str, acro_dict: AcronymDict) -> Tuple[str, List[str
             return protect(pron) if pron else word
 
         text = re.sub(ru_pattern, ru_acro, text)
-    
+
     if acro_dict.acro_en:
         en_keys = sorted(acro_dict.acro_en.keys(), key=len, reverse=True)
         en_pattern = r"\b(?:" + "|".join(re.escape(k) for k in en_keys) + r")\b"
@@ -428,13 +470,13 @@ def normalize_acronyms(text: str, acro_dict: AcronymDict) -> Tuple[str, List[str
                 and word.upper() not in ROMAN_STOPLIST
             ):
                 return word
-            
+
             en_pron, ru_pron = acro_dict.get_en_pronunciation(word)
-            
+
             # Если ru есть, а en пустой — всегда русское произношение
             if ru_pron and not en_pron:
                 return ru_pron
-            
+
             if ru_pron and en_pron:
                 # Оба есть — проверяем контекст
                 start = m.start()
@@ -442,7 +484,7 @@ def normalize_acronyms(text: str, acro_dict: AcronymDict) -> Tuple[str, List[str
                 left_char = ""
                 for i in range(start - 1, -1, -1):
                     ch = text[i]
-                    if ch.isalpha() or ('а' <= ch.lower() <= 'я' or ch.lower() == 'ё'):
+                    if ch.isalpha() or ("а" <= ch.lower() <= "я" or ch.lower() == "ё"):
                         left_char = ch
                         break
                     if ch not in " .,;:!?-\"'()":
@@ -451,29 +493,33 @@ def normalize_acronyms(text: str, acro_dict: AcronymDict) -> Tuple[str, List[str
                 right_char = ""
                 for i in range(end, len(text)):
                     ch = text[i]
-                    if ch.isalpha() or ('а' <= ch.lower() <= 'я' or ch.lower() == 'ё'):
+                    if ch.isalpha() or ("а" <= ch.lower() <= "я" or ch.lower() == "ё"):
                         right_char = ch
                         break
                     if ch not in " .,;:!?-\"'()":
                         right_char = ch
                         break
                 near_cyrillic = (
-                    (left_char and ('а' <= left_char.lower() <= 'я' or left_char.lower() == 'ё')) or
-                    (right_char and ('а' <= right_char.lower() <= 'я' or right_char.lower() == 'ё'))
+                    left_char
+                    and ("а" <= left_char.lower() <= "я" or left_char.lower() == "ё")
+                ) or (
+                    right_char
+                    and ("а" <= right_char.lower() <= "я" or right_char.lower() == "ё")
                 )
                 if near_cyrillic:
                     return ru_pron
                 else:
                     return protect(en_pron)
-            
+
             if en_pron:
                 return protect(en_pron)
-            
+
             return word
 
         text = re.sub(en_pattern, en_acro, text)
-    
+
     return text, protected
+
 
 # --- Шаг 17: Имена правителей с римскими цифрами ---
 
@@ -748,7 +794,8 @@ def normalize_roman_generic(words: list, gaps: list, acro_dict=None) -> tuple:
 
         # Сначала проверим: если перед римской предлог
         prev_w_clean = "".join(
-            c for c in unicodedata.normalize("NFD", prev_w.lower())
+            c
+            for c in unicodedata.normalize("NFD", prev_w.lower())
             if not unicodedata.combining(c)
         )
         if prev_w_clean in prep_cases:
@@ -1112,15 +1159,98 @@ def normalize_numbers(words: list, gaps: list) -> tuple:
         "во́семь",
         "де́вять",
     ]
-    for i, w in enumerate(words):
+
+    # Предлоги для определения падежа
+    prep_cases = {
+        "в": "prep",
+        "во": "prep",
+        "на": "prep",
+        "о": "prep",
+        "об": "prep",
+        "при": "prep",
+        "к": "dat",
+        "ко": "dat",
+        "по": "dat",
+        "с": "gen",
+        "со": "gen",
+        "от": "gen",
+        "до": "gen",
+        "из": "gen",
+        "у": "gen",
+        "для": "gen",
+        "без": "gen",
+        "между": "instr",
+    }
+
+    i = 0
+    while i < len(words):
+        w = words[i]
         if w.isdigit():
             n = int(w)
-            replacement = (
-                " ".join(digit_words[int(d)] for d in w)
-                if (len(w) > 1 and w[0] == "0")
-                else number_to_words(n)
-            )
+            next_word = words[i + 1] if i + 1 < len(words) else ""
+            prev_word = words[i - 1] if i > 0 else ""
+
+            case = None
+
+            # Сначала падеж от "год" (точнее)
+            case = _detect_year_case(next_word) if next_word else None
+
+            # Если "год" не найден или омограф без ударения — уточняем по предлогу
+            if not case:
+                prev_clean = (
+                    "".join(
+                        c
+                        for c in unicodedata.normalize("NFD", prev_word.lower())
+                        if not unicodedata.combining(c)
+                    )
+                    if prev_word
+                    else ""
+                )
+                if prev_clean in prep_cases:
+                    case = prep_cases[prev_clean]
+                    # "по" + "год" (им.п.) → винительный (= именительный)
+                    if prev_clean == "по" and next_word == "год":
+                        case = "nom_m"
+            elif case in ("dat", "prep"):
+                # Омограф "году" — уточняем по ударению
+                if next_word == "году":
+                    # Есть ударение — оставляем case
+                    # Нет ударения — уточняем по предлогу
+                    if "́" not in next_word:
+                        prev_clean = (
+                            "".join(
+                                c
+                                for c in unicodedata.normalize("NFD", prev_word.lower())
+                                if not unicodedata.combining(c)
+                            )
+                            if prev_word
+                            else ""
+                        )
+                        if prev_clean in prep_cases:
+                            case = prep_cases[prev_clean]
+
+            if case:
+                replacement = ordinal_text(n, case)
+                replacement = replacement.replace("одна́ ты́сяча", "ты́сяча")
+                # Добавляем ударение в следующее слово (год)
+                if next_word and case:
+                    stress_map = {
+                        "года": "го́да" if case == "gen" else "года́",
+                        "годов": "годо́в",
+                        "годам": "года́м",
+                        "годами": "года́ми",
+                        "годах": "года́х",
+                        "году": "году́",
+                    }
+                    if next_word in stress_map:
+                        words[i + 1] = stress_map[next_word]
+            elif len(w) > 1 and w[0] == "0":
+                replacement = " ".join(digit_words[int(d)] for d in w)
+            else:
+                replacement = number_to_words(n)
+
             words[i] = replacement
+        i += 1
     return words, gaps
 
 
