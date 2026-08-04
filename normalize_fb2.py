@@ -6,7 +6,7 @@
   python normalize_fb2.py book.fb2
 """
 
-VERSION = "1.1.3"
+VERSION = "1.1.4"
 
 import argparse
 import hashlib

@@ -3,6 +3,7 @@
 """
 
 from normfb2.data import (
+    MEASUREMENTS, MEASUREMENTS_AMBIGUOUS,
     CURRENCIES,
     DECIMAL_PLACES,
     EN_LETTER_NAMES,

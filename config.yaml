@@ -73,7 +73,7 @@ final_phrase: "Коне́ц озву́ченного те́кста."
 parallel_threads: 4
 max_chunk_length: 950
 blocks_per_part: 100
-filter_threads: 4 # потоков для аудиофильтров ffmpeg
+filter_threads: 4 # потоков для аудиофильтров ffmpeg (не используется)
 
 # Обработка звука через pedalboard (или pedalboard или ffmpeg_filter)
 # Постобработка pedalboard

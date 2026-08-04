@@ -15,8 +15,8 @@ from normfb2.data import (
     GREEK_TO_RUSSIAN,
     LATIN_DIACRITICS_MAP,
     LETTER_NAMES,
-    MEASUREMENTS_AMBIGUOUS_TSV,
-    MEASUREMENTS_TSV,
+    MEASUREMENTS_AMBIGUOUS,
+    MEASUREMENTS,
     MONTHS_GEN,
     MULTIPLIERS,
     SECTION_ABBR,
@@ -44,20 +44,6 @@ PROTECT_MARKER_PREFIX = "ЪььЬььЪ"
 PROTECT_MARKER_SUFFIX = "ЪььЪььЪ"
 # Буква-номер для маркера (без цифр)
 _MARKER_LETTERS = "абвгдежзийклмнопрстуфхцчшщыэюя"
-
-
-def _read_tsv(name: str):
-    if name == "measurements":
-        tsv = MEASUREMENTS_TSV
-    elif name == "measurements_ambiguous":
-        tsv = MEASUREMENTS_AMBIGUOUS_TSV
-    else:
-        return []
-    return [
-        l.strip()
-        for l in tsv.splitlines()
-        if l.strip() and not l.strip().startswith("#")
-    ]
 
 
 def _detect_year_case(w: str) -> str:
@@ -161,16 +147,7 @@ def normalize_ranges(words: list, gaps: list) -> tuple:
                     # Убираем "одна́" перед "ты́сяча"
                     words[i] = words[i].replace("одна́ ты́сяча", "ты́сяча")
                     words[i + 1] = words[i + 1].replace("одна́ ты́сяча", "ты́сяча")
-                    # Добавляем ударение в next_word
-                    stress_map = {
-                        "года": "го́да" if case == "gen" else "года́",
-                        "годов": "годо́в",
-                        "годам": "года́м",
-                        "годами": "года́ми",
-                        "годах": "года́х",
-                    }
-                    if next_word.lower().rstrip(".") in stress_map:
-                        words[i + 2] = stress_map[next_word.lower().rstrip(".")]
+
                 else:
                     words[i] = number_to_words(n1)
                     gaps[i + 1] = " "
@@ -325,40 +302,24 @@ def normalize_multipliers(words: list, gaps: list) -> tuple:
 def normalize_measurements(words: list, gaps: list) -> tuple:
     import unicodedata
 
-    units = {}
-    for line in _read_tsv("measurements"):
-        parts = line.split("\t")
-        if len(parts) == 5:
-            units[parts[0]] = (parts[1], parts[2], parts[3], parts[4])
-    if not units:
+    if not MEASUREMENTS:
         return words, gaps
     i = 0
     while i < len(words):
         if words[i].isdigit() and i + 1 < len(words):
             next_w = words[i + 1].rstrip(".")
             next_w_clean = "".join(
-                c
-                for c in unicodedata.normalize("NFD", next_w)
+                c for c in unicodedata.normalize("NFD", next_w)
                 if not unicodedata.combining(c)
             )
-            found = None
-            for k, v in units.items():
-                k_clean = "".join(
-                    c
-                    for c in unicodedata.normalize("NFD", k)
-                    if not unicodedata.combining(c)
-                )
-                if next_w_clean == k_clean:
-                    found = (k, v)
-                    break
-            if found:
-                one, few, many, gender = found[1]
+            if next_w_clean in MEASUREMENTS:
+                forms, gender = MEASUREMENTS[next_w_clean]
                 n = int(words[i])
                 w = number_to_words(n).split()
                 if gender == "f":
                     _feminine_last(w)
                 words[i] = " ".join(w)
-                words[i + 1] = _plural(n, (one, few, many))
+                words[i + 1] = _plural(n, forms)
                 i += 2
                 continue
         i += 1
@@ -369,40 +330,24 @@ def normalize_measurements(words: list, gaps: list) -> tuple:
 def normalize_measurements_1letter(words: list, gaps: list) -> tuple:
     import unicodedata
 
-    units = {}
-    for line in _read_tsv("measurements_ambiguous"):
-        parts = line.split("\t")
-        if len(parts) == 5:
-            units[parts[0]] = (parts[1], parts[2], parts[3], parts[4])
-    if not units:
+    if not MEASUREMENTS_AMBIGUOUS:
         return words, gaps
     i = 0
     while i < len(words):
         if words[i].isdigit() and i + 1 < len(words):
             next_w = words[i + 1].rstrip(".")
             next_w_clean = "".join(
-                c
-                for c in unicodedata.normalize("NFD", next_w)
+                c for c in unicodedata.normalize("NFD", next_w)
                 if not unicodedata.combining(c)
             )
-            found = None
-            for k, v in units.items():
-                k_clean = "".join(
-                    c
-                    for c in unicodedata.normalize("NFD", k)
-                    if not unicodedata.combining(c)
-                )
-                if next_w_clean == k_clean:
-                    found = (k, v)
-                    break
-            if found:
-                one, few, many, gender = found[1]
+            if next_w_clean in MEASUREMENTS_AMBIGUOUS:
+                forms, gender = MEASUREMENTS_AMBIGUOUS[next_w_clean]
                 n = int(words[i])
                 w = number_to_words(n).split()
                 if gender == "f":
                     _feminine_last(w)
                 words[i] = " ".join(w)
-                words[i + 1] = _plural(n, (one, few, many))
+                words[i + 1] = _plural(n, forms)
                 i += 2
                 continue
         i += 1
@@ -1120,6 +1065,22 @@ def normalize_currency(text: str) -> str:
             r"(\d+(?:\.\d\d)?)\s*(е́вро(?!" + RUSSIAN_CHAR + r")|€)",
             r"€(\d+(?:\.\d\d)?)",
         ],
+        "gbp": [
+            r"(\d+(?:\.\d\d)?)\s*(фу́нт(?!" + RUSSIAN_CHAR + r")|£)",
+            r"£(\d+(?:\.\d\d)?)",
+        ],
+        "jpy": [
+            r"(\d+(?:\.\d\d)?)\s*(ие́н(?!" + RUSSIAN_CHAR + r")|¥)",
+            r"¥(\d+(?:\.\d\d)?)",
+        ],
+        "uah": [
+            r"(\d+(?:\.\d\d)?)\s*(гри́в(ен|на|ны)?(?!" + RUSSIAN_CHAR + r")|₴)",
+            r"₴(\d+(?:\.\d\d)?)",
+        ],
+        "kzt": [
+            r"(\d+(?:\.\d\d)?)\s*(тенге́(?!" + RUSSIAN_CHAR + r")|₸)",
+            r"₸(\d+(?:\.\d\d)?)",
+        ],
     }
     for code, pats in patterns.items():
         (main_units, main_fem), (sub_units, sub_fem) = CURRENCIES[code]
@@ -1192,58 +1153,23 @@ def normalize_numbers(words: list, gaps: list) -> tuple:
 
             case = None
 
-            # Сначала падеж от "год" (точнее)
-            case = _detect_year_case(next_word) if next_word else None
-
-            # Если "год" не найден или омограф без ударения — уточняем по предлогу
-            if not case:
-                prev_clean = (
-                    "".join(
-                        c
-                        for c in unicodedata.normalize("NFD", prev_word.lower())
-                        if not unicodedata.combining(c)
-                    )
-                    if prev_word
-                    else ""
-                )
-                if prev_clean in prep_cases:
-                    case = prep_cases[prev_clean]
-                    # "по" + "год" (им.п.) → винительный (= именительный)
-                    if prev_clean == "по" and next_word == "год":
-                        case = "nom_m"
-            elif case in ("dat", "prep"):
-                # Омограф "году" — уточняем по ударению
-                if next_word == "году":
-                    # Есть ударение — оставляем case
-                    # Нет ударения — уточняем по предлогу
-                    if "́" not in next_word:
-                        prev_clean = (
-                            "".join(
-                                c
-                                for c in unicodedata.normalize("NFD", prev_word.lower())
-                                if not unicodedata.combining(c)
-                            )
-                            if prev_word
-                            else ""
-                        )
-                        if prev_clean in prep_cases:
-                            case = prep_cases[prev_clean]
+            # Порядковое только если есть предлог
+            prev_clean = (
+                "".join(
+                    c for c in unicodedata.normalize("NFD", prev_word.lower())
+                    if not unicodedata.combining(c)
+                ) if prev_word else ""
+            )
+            if prev_clean in prep_cases:
+                case = prep_cases[prev_clean]
+                # "по" + "год" (им.п.) → винительный (= именительный)
+                if prev_clean == "по" and next_word == "год":
+                    case = "nom_m"
 
             if case:
                 replacement = ordinal_text(n, case)
                 replacement = replacement.replace("одна́ ты́сяча", "ты́сяча")
-                # Добавляем ударение в следующее слово (год)
-                if next_word and case:
-                    stress_map = {
-                        "года": "го́да" if case == "gen" else "года́",
-                        "годов": "годо́в",
-                        "годам": "года́м",
-                        "годами": "года́ми",
-                        "годах": "года́х",
-                        "году": "году́",
-                    }
-                    if next_word in stress_map:
-                        words[i + 1] = stress_map[next_word]
+
             elif len(w) > 1 and w[0] == "0":
                 replacement = " ".join(digit_words[int(d)] for d in w)
             else:
