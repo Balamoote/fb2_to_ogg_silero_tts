@@ -916,9 +916,19 @@ def normalize_alphanumeric(words: list, gaps: list) -> tuple:
             and w.lower() not in ("в",)
             and w not in "IVXLCDM"
             and gaps[i + 1].startswith(".")
-            and not (i + 1 < len(words) and words[i + 1].isdigit())
+            and not (
+                i + 1 < len(words) 
+                and words[i + 1].isdigit()
+                and not gaps[i + 1].startswith(".,")
+            )
         ):
-            words[i] = spell_letters(w) + "."
+            # Убираем запятую из зазора, если она есть
+            if gaps[i + 1].startswith(".,"):
+                gaps[i + 1] = gaps[i + 1][1:]  # убираем точку
+                gaps[i + 1] = gaps[i + 1][1:]  # убираем запятую
+                words[i] = spell_letters(w) + ","
+            else:
+                words[i] = spell_letters(w)
             i += 1
             continue
 
