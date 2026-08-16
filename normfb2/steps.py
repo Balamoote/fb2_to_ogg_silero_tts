@@ -61,14 +61,182 @@ def _detect_year_case(w: str) -> str:
         "годе": "prep",
         "годом": "instr",
         "годов": "pl",
-        "годам": "instr",
+        "годам": "dat",
         "годами": "instr",
-        "годах": "pl",
+        "годах": "prep",
         "гг": "nom_m",
         "гг.": "nom_m",
         "годы": "nom_m",
+        "лет": "pl",
+        "г": "nom_m",
+        "г.": "nom_m",
     }
     return cases.get(w_norm, None)
+
+
+def _get_god_form(case: str, number: int = None, is_plural: bool = False) -> str:
+    """Возвращает правильную форму слова 'год' для указанного падежа и числа"""
+    if number is not None:
+        # Определяем множественное число по числу
+        # 11-14 — исключения, всегда "лет"
+        if 11 <= number % 100 <= 14:
+            is_plural = True
+        else:
+            last_digit = number % 10
+            if last_digit == 1:
+                is_plural = False
+            elif 2 <= last_digit <= 4:
+                is_plural = False
+            else:
+                is_plural = True
+    
+    # Определяем форму: "год" (1), "года" (2-4), "лет" (5+)
+    if number is not None:
+        if 11 <= number % 100 <= 14:
+            form_type = "let"
+        else:
+            last_digit = number % 10
+            if last_digit == 1:
+                form_type = "god"
+            elif 2 <= last_digit <= 4:
+                form_type = "goda"
+            else:
+                form_type = "let"
+    else:
+        form_type = "let" if is_plural else "god"
+    
+    if form_type == "god":
+        forms = {
+            "nom_m": "го́д",
+            "gen": "го́да",
+            "dat": "го́ду",
+            "acc_m": "го́д",
+            "acc_f": "го́д",
+            "instr": "го́дом",
+            "prep": "году́",  # местный падеж "в году́"
+        }
+        return forms.get(case, "го́д")
+    elif form_type == "goda":
+        forms = {
+            "nom_m": "го́да",
+            "gen": "го́да",
+            "dat": "го́ду",
+            "acc_m": "го́да",
+            "acc_f": "го́да",
+            "instr": "го́дом",
+            "prep": "году́",
+        }
+        return forms.get(case, "го́да")
+    else:  # "let" — множественное число, всегда "лет"
+        forms = {
+            "nom_m": "ле́т",
+            "gen": "ле́т",
+            "dat": "года́м",
+            "acc_m": "ле́т",
+            "acc_f": "ле́т",
+            "instr": "года́ми",
+            "prep": "года́х",
+            "pl": "ле́т",
+            "instr_pl": "года́ми",
+        }
+        return forms.get(case, "ле́т")
+
+
+def _decline_number_genitive(n: int) -> str:
+    """Склоняет количественное числительное в родительный падеж"""
+    if n == 1:
+        return "одного́"
+    elif n == 2:
+        return "дву́х"
+    elif n == 3:
+        return "трёх"
+    elif n == 4:
+        return "четырёх"
+    elif n == 5:
+        return "пяти́"
+    elif n == 6:
+        return "шести́"
+    elif n == 7:
+        return "семи́"
+    elif n == 8:
+        return "восьми́"
+    elif n == 9:
+        return "девяти́"
+    elif n == 10:
+        return "десяти́"
+    elif 11 <= n <= 19:
+        return number_to_words(n)  # для 11-19 форма не меняется
+    elif n < 100:
+        tens = n // 10
+        ones = n % 10
+        tens_forms = {
+            2: "двадцати́",
+            3: "тридцати́",
+            4: "сорока́",
+            5: "пяти́десяти",
+            6: "шести́десяти",
+            7: "семи́десяти",
+            8: "восьми́десяти",
+            9: "девяно́ста",
+        }
+        if ones == 0:
+            return tens_forms.get(tens, number_to_words(n))
+        else:
+            return f"{tens_forms.get(tens, number_to_words(tens * 10))} {_decline_number_genitive(ones)}"
+    else:
+        # Для больших чисел — используем number_to_words
+        return number_to_words(n)
+
+
+def _decline_number_dative(n: int) -> str:
+    """Склоняет количественное числительное в дательный падеж"""
+    if n == 1:
+        return "одному́"
+    elif n == 2:
+        return "дву́м"
+    elif n == 3:
+        return "трём"
+    elif n == 4:
+        return "четырём"
+    elif n == 5:
+        return "пяти́"
+    elif n == 6:
+        return "шести́"
+    elif n == 7:
+        return "семи́"
+    elif n == 8:
+        return "восьми́"
+    elif n == 9:
+        return "девяти́"
+    elif n == 10:
+        return "десяти́"
+    elif 11 <= n <= 19:
+        return number_to_words(n)
+    elif n < 100:
+        tens = n // 10
+        ones = n % 10
+        tens_forms = {
+            2: "двадцати́",
+            3: "тридцати́",
+            4: "сорока́",
+            5: "пяти́десяти",
+            6: "шести́десяти",
+            7: "семи́десяти",
+            8: "восьми́десяти",
+            9: "девяно́ста",
+        }
+        if ones == 0:
+            return tens_forms.get(tens, number_to_words(n))
+        else:
+            return f"{tens_forms.get(tens, number_to_words(tens * 10))} {_decline_number_dative(ones)}"
+    else:
+        return number_to_words(n)
+
+
+def _decline_number_prepositional(n: int) -> str:
+    """Склоняет количественное числительное в предложный падеж"""
+    # Предложный падеж совпадает с родительным для большинства числительных
+    return _decline_number_genitive(n)
 
 
 # --- Шаг 1: Типографика ---
@@ -140,17 +308,94 @@ def normalize_ranges(words: list, gaps: list) -> tuple:
                     if next_word
                     else None
                 )
+                
+                # Проверяем предлог перед диапазоном
+                prev_word_before_range = words[i - 1] if i > 0 else ""
+                prev_clean = "".join(
+                    c for c in unicodedata.normalize("NFD", prev_word_before_range.lower())
+                    if not unicodedata.combining(c)
+                ) if prev_word_before_range else ""
+                
+                # Предлоги для определения падежа
+                prep_cases = {
+                    "в": "prep",
+                    "во": "prep",
+                    "на": "prep",
+                    "о": "prep",
+                    "об": "prep",
+                    "при": "prep",
+                    "к": "dat",
+                    "ко": "dat",
+                    "по": "dat",
+                    "с": "gen",
+                    "со": "gen",
+                    "от": "gen",
+                    "до": "gen",
+                    "из": "gen",
+                    "у": "gen",
+                    "для": "gen",
+                    "без": "gen",
+                    "между": "instr",
+                }
 
                 if case:
-                    words[i] = ordinal_text(n1, case)
-                    words[i + 1] = ordinal_text(n2, case)
+                    # Если есть предлог, переопределяем падеж
+                    if prev_clean in prep_cases:
+                        case = prep_cases[prev_clean]
+                        # Для "с ... по ..." — вторая часть в им.п.
+                        if prev_clean == "по":
+                            case = "nom_m"
+                    
+                    # Определяем падеж для диапазона
+                    # Для "гг." и "годы" — используем case (уже переопределён предлогом)
+                    if next_word.lower().rstrip(".") in ("гг", "годы"):
+                        words[i] = ordinal_text(n1, case)
+                        words[i + 1] = ordinal_text(n2, case)
+                    elif next_word.lower().rstrip(".") in ("годов", "лет"):
+                        words[i] = ordinal_text(n1, "nom_m")
+                        words[i + 1] = ordinal_text(n2, "nom_m")
+                    elif next_word.lower().rstrip(".") in ("годам",):
+                        words[i] = ordinal_text(n1, "dat")
+                        words[i + 1] = ordinal_text(n2, "dat")
+                    elif next_word.lower().rstrip(".") in ("годах",):
+                        words[i] = ordinal_text(n1, "prep")
+                        words[i + 1] = ordinal_text(n2, "prep")
+                    elif next_word.lower().rstrip(".") in ("годами",):
+                        words[i] = ordinal_text(n1, "instr")
+                        words[i + 1] = ordinal_text(n2, "instr")
+                    else:
+                        words[i] = ordinal_text(n1, case)
+                        words[i + 1] = ordinal_text(n2, case)
+                    # Заменяем дефис на " - "
+                    gaps[i + 1] = " - "
                     # Убираем "одна́" перед "ты́сяча"
                     words[i] = words[i].replace("одна́ ты́сяча", "ты́сяча")
                     words[i + 1] = words[i + 1].replace("одна́ ты́сяча", "ты́сяча")
+                    # Заменяем слово "годы"/"годов"/"годам"/"годах" на правильную форму
+                    if next_word:
+                        # Для "гг." и "годы" — всегда множественное число
+                        if next_word.lower().rstrip(".") in ("гг", "годы"):
+                            if case == "prep":
+                                words[i + 2] = "года́х"
+                            else:
+                                words[i + 2] = "го́ды"
+                        elif next_word.lower().rstrip(".") in ("годов", "лет"):
+                            words[i + 2] = "годо́в"
+                        elif next_word.lower().rstrip(".") in ("годам",):
+                            words[i + 2] = "года́м"
+                        elif next_word.lower().rstrip(".") in ("годах",):
+                            words[i + 2] = "года́х"
+                        elif next_word.lower().rstrip(".") in ("годами",):
+                            words[i + 2] = "года́ми"
+                        else:
+                            words[i + 2] = _get_god_form(case, 5)
+                        # Убираем точку из зазора после слова
+                        if i + 3 < len(gaps) and gaps[i + 3].startswith("."):
+                            gaps[i + 3] = gaps[i + 3][1:]
 
                 else:
                     words[i] = number_to_words(n1)
-                    gaps[i + 1] = " "
+                    gaps[i + 1] = " - "
                     words[i + 1] = number_to_words(n2)
                 i += 2
                 continue
@@ -538,6 +783,57 @@ def normalize_roman_generic(words: list, gaps: list, acro_dict=None) -> tuple:
             return "nom_m"
         return None
 
+    # Замена слова "век" на правильную форму с ударением
+    def get_vek_form(case, is_plural=False):
+        if is_plural:
+            forms = {
+                "nom_m": "века́",
+                "gen": "веко́в",
+                "dat": "века́м",
+                "acc_m": "века́",
+                "acc_f": "века́",
+                "instr": "века́ми",
+                "prep": "века́х",
+                "pl": "веко́в",
+                "instr_pl": "века́ми",
+            }
+            return forms.get(case, "века́")
+        else:
+            forms = {
+                "nom_m": "ве́к",
+                "gen": "ве́ка",
+                "dat": "ве́ку",
+                "acc_m": "ве́к",
+                "acc_f": "ве́к",
+                "instr": "ве́ком",
+                "prep": "ве́ке",
+            }
+            return forms.get(case, "ве́к")
+
+    # Функция для замены "век"/"в."/"вв." на правильную форму
+    def replace_vek_word(word, case, is_range=False):
+        word_clean = word.rstrip(".")
+        word_norm = "".join(
+            c for c in unicodedata.normalize("NFD", word_clean)
+            if not unicodedata.combining(c)
+        )
+        
+        # Определяем множественное число
+        is_plural = word_norm in ("вв", "веков", "векам", "веками", "веках")
+        if word_norm == "века":
+            # Одиночное "века" — это родительный падеж ед.ч.
+            is_plural = False
+        elif word_norm in ("вв",):
+            is_plural = True
+        
+        # Для диапазона без предлога с "века" — это именительный падеж мн.ч.
+        if is_range and word_norm == "века" and case == "gen":
+            return "века́"  # им.п. мн.ч.
+        if is_range and word_norm == "века" and case == "nom_m":
+            return "века́"  # им.п. мн.ч.
+        
+        return get_vek_form(case, is_plural)
+
     # Предлоги и требуемые падежи
     prep_cases = {
         "в": "prep",
@@ -703,23 +999,40 @@ def normalize_roman_generic(words: list, gaps: list, acro_dict=None) -> tuple:
             next_idx = range_end + 1
             next_word = words[next_idx] if next_idx < len(words) else ""
             case = detect_case(next_word, is_range=True) if next_word else None
+            
+            # Проверяем наличие предлога перед диапазоном
+            prev_idx = i - 1
+            prev_word_before_range = words[prev_idx] if prev_idx >= 0 else ""
+            prev_clean = "".join(
+                c for c in unicodedata.normalize("NFD", prev_word_before_range.lower())
+                if not unicodedata.combining(c)
+            ) if prev_word_before_range else ""
+            
+            # Если нет предлога и следующее слово "века" — используем именительный падеж
+            if not prev_clean in prep_cases and next_word and detect_case(next_word) == "gen":
+                case = "nom_m"
+            elif prev_clean in prep_cases:
+                case = prep_cases[prev_clean]
+            elif prev_clean == "в" and next_word and next_word.lower().rstrip(".") in ("гг", "годы"):
+                case = "prep"
+            elif prev_clean == "с" and next_word and next_word.lower().rstrip(".") in ("гг", "годы"):
+                case = "gen"
 
             if case:
                 # Определяем форму для каждой части диапазона
                 for j in range(i, range_end + 1):
                     n = roman_to_int(words[j])
-                    words[j] = ordinal_text(n, case)
-                # Добавляем ударение в слово после диапазона если нужно
+                    # Для диапазона с предлогом "с" — используем родительный падеж для каждой части
+                    if prev_clean in ("с", "со") and case == "gen":
+                        words[j] = ordinal_text(n, "gen")
+                    else:
+                        words[j] = ordinal_text(n, case)
+                # Заменяем слово после диапазона на правильную форму
                 if next_word:
-                    stress_map = {
-                        "века": "ве́ка" if case == "gen" else "века́",
-                        "веков": "веко́в",
-                        "векам": "века́м",
-                        "веками": "века́ми",
-                        "веках": "века́х",
-                    }
-                    if next_word in stress_map:
-                        words[next_idx] = stress_map[next_word]
+                    words[next_idx] = replace_vek_word(next_word, case, is_range=True)
+                    # Убираем точку из зазора после замены
+                    if next_idx + 1 < len(gaps) and gaps[next_idx + 1].startswith("."):
+                        gaps[next_idx + 1] = gaps[next_idx + 1][1:]
                 i = range_end + 1
                 continue
             else:
@@ -758,8 +1071,12 @@ def normalize_roman_generic(words: list, gaps: list, acro_dict=None) -> tuple:
 
         if case:
             words[i] = ordinal_text(num, case)
-            # Если next_word — "век/века/веку/..." — пропускаем его
+            # Заменяем next_word на правильную форму с ударением
             if next_word and detect_case(next_word):
+                words[i + 1] = replace_vek_word(next_word, case)
+                # Убираем точку из зазора после замены
+                if i + 2 < len(gaps) and gaps[i + 2].startswith("."):
+                    gaps[i + 2] = gaps[i + 2][1:]
                 i += 2
             else:
                 i += 1
@@ -1162,6 +1479,30 @@ def normalize_numbers(words: list, gaps: list) -> tuple:
             prev_word = words[i - 1] if i > 0 else ""
 
             case = None
+            
+            # Проверяем, является ли следующее слово формой "год"/"г."/"гг."/"лет"
+            next_word_clean = next_word.lower().rstrip(".")
+            year_case = _detect_year_case(next_word_clean) if next_word else None
+            
+            # Определяем тип формы слова (год/года/лет)
+            if next_word_clean in ("год", "г"):
+                form_type = "god"
+                is_abbrev = next_word_clean == "г"
+            elif next_word_clean in ("года", "году", "годе", "годом"):
+                form_type = "goda"
+                is_abbrev = False
+            elif next_word_clean in ("лет", "годов"):
+                form_type = "let"
+                is_abbrev = False
+            elif next_word_clean in ("гг", "годы"):
+                form_type = "gody"  # для "годы" — го́ды, для "гг" — ле́т
+                is_abbrev = next_word_clean == "гг"
+            elif next_word_clean in ("годам", "годах", "годами"):
+                form_type = "let"
+                is_abbrev = False
+            else:
+                form_type = None
+                is_abbrev = False
 
             # Порядковое только если есть предлог
             prev_clean = (
@@ -1172,9 +1513,125 @@ def normalize_numbers(words: list, gaps: list) -> tuple:
             )
             if prev_clean in prep_cases:
                 case = prep_cases[prev_clean]
-                # "по" + "год" (им.п.) → винительный (= именительный)
-                if prev_clean == "по" and next_word == "год":
+                # "по" → винительный (= именительный для неодушевлённых)
+                if prev_clean == "по":
                     case = "nom_m"
+                    # Убираем "одна́" перед "ты́сяча"
+                    if n >= 1000 and n < 2000:
+                        words[i] = ordinal_text(n, case).replace("одна́ ты́сяча", "ты́сяча")
+                        if next_word and form_type:
+                            words[i + 1] = "го́ды" if form_type == "gody" else _get_god_form(case, n)
+                            if i + 2 < len(gaps) and gaps[i + 2].startswith("."):
+                                gaps[i + 2] = gaps[i + 2][1:]
+                        i += 2
+                        continue
+                # Для порядковых с годами
+                if year_case and case and form_type:
+                    # Для "г." — всегда порядковое числительное
+                    if is_abbrev and form_type == "god":
+                        words[i] = ordinal_text(n, case)
+                        if case == "dat":
+                            words[i + 1] = "го́ду"
+                        elif case == "prep":
+                            words[i + 1] = "году́"
+                        else:
+                            words[i + 1] = _get_god_form(case, 1)
+                        if i + 2 < len(gaps) and gaps[i + 2].startswith("."):
+                            gaps[i + 2] = gaps[i + 2][1:]
+                        i += 2
+                        continue
+                    elif is_abbrev and form_type == "gody":
+                        # "гг." — "го́ды" в нужном падеже
+                        words[i] = ordinal_text(n, case)
+                        if case == "prep":
+                            words[i + 1] = "году́"  # "в 5 гг." → "в пя́том году́"
+                        elif case == "dat":
+                            words[i + 1] = "го́ду"  # "к 5 гг." → "к пя́тому го́ду"
+                        elif case == "gen":
+                            words[i + 1] = "го́да"  # "с 5 гг." → "с пя́того го́да"
+                        else:
+                            words[i + 1] = "го́ды"
+                        if i + 2 < len(gaps) and gaps[i + 2].startswith("."):
+                            gaps[i + 2] = gaps[i + 2][1:]
+                        i += 2
+                        continue
+                    
+                    # Для чисел 5+ с формами "лет/годам/годах" — всегда количественное числительное
+                    if form_type == "let" and n >= 5:
+                        if case == "gen":
+                            words[i] = _decline_number_genitive(n)
+                        elif case == "dat":
+                            words[i] = _decline_number_dative(n)
+                        elif case == "prep":
+                            words[i] = _decline_number_prepositional(n)
+                        elif case == "instr":
+                            words[i] = _decline_number_genitive(n)
+                        else:
+                            words[i] = number_to_words(n)
+                    elif form_type == "let" and 2 <= n <= 4 and case == "gen":
+                        # "с 2/3/4 лет" — количественное числительное
+                        words[i] = _decline_number_genitive(n)
+                    elif form_type == "goda" and n >= 2 and case in ("gen", "dat", "prep"):
+                        # "с 2/3/4 года" — "двух/трёх/четырёх"
+                        words[i] = _decline_number_genitive(n)
+                    elif form_type == "god" and case in ("gen", "dat", "prep"):
+                        # "с 1 года", "к 1 году", "в 1 году" — "одного́/одному́/одно́м"
+                        if case == "gen":
+                            words[i] = "одного́"
+                            words[i + 1] = "го́да"
+                        elif case == "dat":
+                            words[i] = ordinal_text(n, "dat")
+                            words[i + 1] = "году́"
+                        elif case == "prep":
+                            words[i] = ordinal_text(n, "prep")
+                            words[i + 1] = "году́"
+                        else:
+                            words[i] = ordinal_text(n, case)
+                            words[i + 1] = "го́д"
+                        i += 2
+                        continue
+                    else:
+                        words[i] = ordinal_text(n, case)
+                    if next_word:
+                        # Для мн.ч. — используем правильную форму
+                        if form_type == "let":
+                            if next_word_clean in ("годам",):
+                                words[i + 1] = "года́м"
+                            elif next_word_clean in ("годах",):
+                                words[i + 1] = "года́х"
+                            elif next_word_clean in ("годами",):
+                                words[i + 1] = "года́ми"
+                            else:
+                                words[i + 1] = "ле́т"
+                        elif form_type == "gody":
+                            if next_word_clean == "гг":
+                                words[i + 1] = "ле́т"
+                            else:
+                                words[i + 1] = "го́ды"
+                        else:
+                            words[i + 1] = _get_god_form(case, n)
+                        # Убираем точку из зазора после слова
+                        if i + 2 < len(gaps) and gaps[i + 2].startswith("."):
+                            gaps[i + 2] = gaps[i + 2][1:]
+                    i += 2
+                    continue
+            # Без предлога, но есть слово "год"/"г."/"гг."/"лет"
+            elif year_case and form_type:
+                # Для им.п. — количественное числительное + правильная форма "год"
+                words[i] = number_to_words(n)
+                if next_word:
+                    if form_type == "gody":
+                        if next_word_clean == "гг":
+                            words[i + 1] = "ле́т"
+                        else:
+                            words[i + 1] = "го́ды"
+                    else:
+                        words[i + 1] = _get_god_form("nom_m", n)
+                    # Убираем точку из зазора после слова
+                    if i + 2 < len(gaps) and gaps[i + 2].startswith("."):
+                        gaps[i + 2] = gaps[i + 2][1:]
+                i += 2
+                continue
 
             if case:
                 replacement = ordinal_text(n, case)

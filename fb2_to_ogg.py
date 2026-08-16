@@ -62,12 +62,20 @@ if MISSING:
 import numpy as np
 import torch
 import torchaudio
+import warnings
+
+# Подавляем предупреждения о SSML тегах для моделей v3
+warnings.filterwarnings("ignore", message="Current model doesn't support SSML tag")
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = {
     "ru_model": "v5_cis_base_nostress",
     "en_model": "v3_en",
+    "put_accent": True,  # авто-ударения для слов без ручной разметки
+    "put_yo": True,  # авто-расстановка буквы ё
+    "put_stress_homo": True,  # авто-ударения для омографов
+    "put_yo_homo": True,  # авто-ё для омографов
     "ru_speaker": None,
     "en_speaker": "en_0",
     "service_speaker": None,
@@ -78,12 +86,17 @@ DEFAULT_CONFIG = {
     "pause_between_paragraphs": 0.2,
     "pause_between_sentences": 0.05,
     "pause_comma": 0.05,
+    "pause_dash": 0.2,  # пауза для тире (—)
     "pause_semicolon": 0.1,
     "pause_colon": 0.12,
     "force_punctuation": False,  # True = принудительные паузы по знакам, False = естественные паузы Silero
+    "ssml_enabled": False,  # True = паузы через SSML, False = программные паузы
     "pause_between_chapters": 1.5,
+    "pause_between_subsections": 0.8,  # пауза между подглавами (subtitle)
     "footnote_prefix": "Сноска",
     "footnote_suffix": "Конец сноски",
+    "annotation_prefix": "Аннотация",
+    "annotation_suffix": "Конец аннотации",
     "final_phrase": "Конец озвученного текста.",
     "skip_footnotes": False,
     "loudness_target": -23.0,
@@ -96,6 +109,7 @@ DEFAULT_CONFIG = {
     "emphasis_pause_after": 0.0,
     "emphasis_speaker": None,
     "emphasis_speed": 1.0,
+    "emphasis_pitch": "medium",  # x-low, low, medium, high, x-high (для SSML)
     # Настройки для английского текста
     "en_pause_before": 0.0,
     "en_pause_after": 0.0,
@@ -414,7 +428,7 @@ def _find_best_split_position(chunk: str, max_length: int) -> int:
                             return i + 2  # Включая пробел
                     else:
                         return i + 1
-                elif chunk[i + 1] in '»"\'\)':
+            elif chunk[i + 1] in '»"\')':
                     # Закрывающая кавычка/скобка после знака
                     if i + 2 < len(chunk) and chunk[i + 2] == ' ':
                         if i + 3 < len(chunk):
@@ -465,8 +479,8 @@ class TextCleaner:
         text = unicodedata.normalize("NFC", text)
         replacements = {
             "…": "...",
-            "—": ", ",
-            "–": ", ",
+            "—": " <dash> ",
+            "–": " <dash> ",
             "-": " ",
             "\u2019": "'",
             "\u2018": "'",
@@ -522,6 +536,9 @@ class FB2Parser:
         self.xlink_namespace = "http://www.w3.org/1999/xlink"
         self.footnotes_map: Dict[str, str] = {}
         self.force_punctuation = False
+        self.pause_between_subsections = 0.8
+        self.annotation_prefix = "Аннотация"
+        self.annotation_suffix = "Конец аннотации"
 
     def parse(self) -> List[List[Dict]]:
         """Парсит FB2 файл и возвращает список глав с блоками."""
@@ -535,83 +552,83 @@ class FB2Parser:
             if desc is not None:
                 title_info = desc.find(f"{{{self.namespace}}}title-info")
                 if title_info is not None:
+                    # 1. Автор
+                    author_elem = title_info.find(f"{{{self.namespace}}}author")
+                    if author_elem is not None:
+                        author_text = self._extract_text(author_elem)
+                        if author_text.strip():
+                            author_text = author_text.strip()
+                            if not author_text.endswith(('.', '!', '?', '…')):
+                                author_text += "."
+                            chapters.append([
+                                {"type": "text", "content": self._norm(author_text)}
+                            ])
+                    
+                    # 2. Название книги
+                    book_title_elem = title_info.find(f"{{{self.namespace}}}book-title")
+                    if book_title_elem is not None:
+                        title_text = self._extract_text(book_title_elem)
+                        if title_text.strip():
+                            title_text = title_text.strip()
+                            if not title_text.endswith(('.', '!', '?', '…')):
+                                title_text += "."
+                            chapters.append([
+                                {"type": "text", "content": self._norm(title_text)}
+                            ])
+                    
+                    # 3. Аннотация со служебными фразами
                     annotation = title_info.find(f"{{{self.namespace}}}annotation")
                     if annotation is not None:
                         anno_blocks = []
+                        # Служебная фраза перед аннотацией
+                        anno_blocks.append({
+                            "type": "text", 
+                            "content": self.annotation_prefix
+                        })
                         for elem in annotation:
                             self._process_element(elem, anno_blocks)
+                        # Служебная фраза после аннотации
+                        anno_blocks.append({
+                            "type": "text", 
+                            "content": self.annotation_suffix
+                        })
                         if anno_blocks:
                             chapters.append(anno_blocks)
             for body in root.findall(f"{{{self.namespace}}}body"):
                 if body.get("name") == "notes":
                     continue
-                chapter_blocks = []
-                for elem in body:
-                    self._process_element(elem, chapter_blocks)
-                chapter_blocks = self._merge_adjacent_text_blocks(chapter_blocks)
-                if chapter_blocks:
-                    chapters.append(chapter_blocks)
+                # Если body содержит section — каждая section = глава
+                sections = body.findall(f"{{{self.namespace}}}section")
+                if sections:
+                    # Обрабатываем элементы до первой секции (title, image, etc.)
+                    pre_section_blocks = []
+                    for elem in body:
+                        if elem.tag == f"{{{self.namespace}}}section":
+                            break
+                        if elem.tag != f"{{{self.namespace}}}title":
+                            self._process_element(elem, pre_section_blocks)
+                        else:
+                            # Title обрабатываем как заголовок всей книги
+                            self._process_element(elem, pre_section_blocks)
+                    
+                    if pre_section_blocks:
+                        chapters.append(pre_section_blocks)
+                    
+                    for section in sections:
+                        chapter_blocks = []
+                        self._process_element(section, chapter_blocks)
+                        if chapter_blocks:
+                            chapters.append(chapter_blocks)
+                else:
+                    # Нет секций — весь body = глава
+                    chapter_blocks = []
+                    for elem in body:
+                        self._process_element(elem, chapter_blocks)
+                    if chapter_blocks:
+                        chapters.append(chapter_blocks)
             return chapters
         except Exception:
             return []
-
-    def _merge_adjacent_text_blocks(self, blocks: List[Dict]) -> List[Dict]:
-        """Объединяет соседние текстовые блоки, если они часть одного предложения."""
-        if not blocks:
-            return blocks
-        
-        # При force_punctuation не объединяем блоки
-        if self.force_punctuation:
-            return blocks
-        
-        merged = []
-        
-        for block in blocks:
-            if block["type"] != "text":
-                merged.append(block)
-                continue
-            
-            text = block["content"].strip()
-            has_english = '<tts_en>' in text
-            
-            # Определяем, нужно ли объединять с предыдущим
-            should_merge = False
-            
-            # Короткий текст (меньше 100 символов)
-            if len(text) < 100:
-                # Если не заканчивается на конец предложения
-                if not text.endswith(('.', '!', '?', '…')):
-                    should_merge = True
-                # Если заканчивается на запятую, двоеточие, точку с запятой
-                elif text.endswith((',', ':', ';')):
-                    should_merge = True
-                # Если начинается с знака препинания или скобки
-                elif text.startswith((',', '.', ';', ':', '(', ')', '-', '—')):
-                    should_merge = True
-            
-            if should_merge:
-                
-                # Пытаемся объединить с предыдущим текстовым блоком
-                if (merged and 
-                    merged[-1]["type"] == "text" and
-                    # Объединяем только блоки одного языка
-                    ('<tts_en>' in merged[-1]["content"]) == has_english):
-                    prev_text = merged[-1]["content"].rstrip()
-                    
-                    # Определяем разделитель
-                    if (prev_text.endswith(('.', ',', ';', ':', '!', '?', '…')) or
-                        text.startswith(('.', ',', ';', ':', '!', '?', '…'))):
-                        separator = ""
-                    else:
-                        separator = " "
-                    
-                    merged[-1]["content"] = prev_text + separator + text
-                    continue
-            
-            # Обычный текстовый блок
-            merged.append(block)
-        
-        return merged
 
     @staticmethod
     def _norm(text: str) -> str:
@@ -644,6 +661,22 @@ class FB2Parser:
             f"{{{self.namespace}}}binary",
             f"{{{self.namespace}}}description",
         ]:
+            return
+        if element.tag == f"{{{self.namespace}}}subtitle":
+            # Подглава: добавляем паузу перед текстом
+            if blocks:
+                blocks.append({
+                    "type": "pause", 
+                    "duration": self.pause_between_subsections
+                })
+            text = self._extract_text(element)
+            if text.strip():
+                blocks.append({"type": "text", "content": self._norm(text.strip())})
+                # Пауза после заголовка (50% от паузы до)
+                blocks.append({
+                    "type": "pause",
+                    "duration": self.pause_between_subsections * 0.5
+                })
             return
         # Обработка tts_en тегов на верхнем уровне
         if element.tag == "tts_en" or (
@@ -681,11 +714,41 @@ class FB2Parser:
             f"{{{self.namespace}}}poem",
             f"{{{self.namespace}}}stanza",
             f"{{{self.namespace}}}v",
+            f"{{{self.namespace}}}table",
+            f"{{{self.namespace}}}tr",
+            f"{{{self.namespace}}}td",
+            f"{{{self.namespace}}}th",
         ]:
             self._extract_text_with_footnotes(element, blocks)
         elif element.tag == f"{{{self.namespace}}}section":
-            for child in element:
-                self._process_element(child, blocks)
+            # Проверяем, есть ли title у секции
+            title_elem = element.find(f"{{{self.namespace}}}title")
+            
+            if title_elem is not None:
+                # Пауза перед заголовком
+                if blocks:
+                    blocks.append({
+                        "type": "pause",
+                        "duration": self.pause_between_subsections
+                    })
+                
+                # Обрабатываем title
+                self._process_element(title_elem, blocks)
+                
+                # Пауза после заголовка (50%)
+                blocks.append({
+                    "type": "pause",
+                    "duration": self.pause_between_subsections * 0.5
+                })
+                
+                # Обрабатываем остальные элементы (кроме title)
+                for child in element:
+                    if child is not title_elem:
+                        self._process_element(child, blocks)
+            else:
+                # Нет title — просто обрабатываем все элементы
+                for child in element:
+                    self._process_element(child, blocks)
         elif element.tag == f"{{{self.namespace}}}empty-line":
             if blocks and blocks[-1]["type"] == "text":
                 blocks.append({"type": "pause", "duration": 0.5})
@@ -948,11 +1011,12 @@ class SileroTTS:
                 processed_text = TextCleaner.convert_stress_for_model(
                     text, self.ru_model_type
                 )
-                
-                # Для v5_5_ru_manual: авто-ударения включаем,
-                # но они не переопределят ручные (формат +гласная имеет приоритет)
-                put_accent = True
-                put_yo = True
+
+                # Настройки ударений из конфига
+                put_accent = self.config.get("put_accent", True)
+                put_yo = self.config.get("put_yo", True)
+                put_stress_homo = self.config.get("put_stress_homo", True)
+                put_yo_homo = self.config.get("put_yo_homo", True)
 
             # Подготавливаем параметры для apply_tts
             apply_tts_params = {
@@ -971,8 +1035,8 @@ class SileroTTS:
                 # Для v5_5_ru добавляем дополнительные флаги
                 if self.ru_model_name in ["v5_5_ru", "v5_5_ru_manual"]:
                     apply_tts_params.update({
-                        "put_stress_homo": True,
-                        "put_yo_homo": True,
+                        "put_stress_homo": put_stress_homo,
+                        "put_yo_homo": put_yo_homo,
                     })
 
             try:
@@ -1010,6 +1074,63 @@ class SileroTTS:
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
             return np.array([], dtype=np.float32)
+        except Exception:
+            return np.array([], dtype=np.float32)
+
+    def synthesize_ssml(
+        self, ssml_text: str, language: str = "ru", speaker: str = None
+    ) -> np.ndarray:
+        """Синтезирует речь из SSML разметки."""
+        if not ssml_text or not ssml_text.strip():
+            return np.array([], dtype=np.float32)
+        try:
+            model = self.models.get(language)
+            if not model:
+                return np.array([], dtype=np.float32)
+            
+            if speaker is None:
+                speaker = self._get_default_speaker(language)
+            
+            # Конвертируем Unicode ударения в +гласная для русской модели
+            if language == "ru":
+                ssml_text = TextCleaner.convert_stress_for_model(
+                    ssml_text, self.ru_model_type
+                )
+            
+            # Подготавливаем параметры
+            apply_tts_params = {
+                "ssml_text": ssml_text,
+                "speaker": speaker,
+                "sample_rate": self.sample_rate,
+            }
+            
+            # Добавляем флаги ударений для русской модели v5
+            if language == "ru" and self.ru_model_name.startswith("v5"):
+                apply_tts_params.update({
+                    "put_accent": self.config.get("put_accent", True),
+                    "put_yo": self.config.get("put_yo", True),
+                })
+                
+                if self.ru_model_name in ["v5_5_ru", "v5_5_ru_manual"]:
+                    apply_tts_params.update({
+                        "put_stress_homo": self.config.get("put_stress_homo", True),
+                        "put_yo_homo": self.config.get("put_yo_homo", True),
+                    })
+            
+            audio = model.apply_tts(**apply_tts_params)
+            
+            if audio is None:
+                return np.array([], dtype=np.float32)
+            if torch.is_tensor(audio):
+                if audio.numel() == 0:
+                    return np.array([], dtype=np.float32)
+                audio = audio.cpu().numpy()
+            if isinstance(audio, np.ndarray) and audio.size == 0:
+                return np.array([], dtype=np.float32)
+            if audio.dtype != np.float32:
+                audio = audio.astype(np.float32)
+            
+            return audio
         except Exception:
             return np.array([], dtype=np.float32)
 
@@ -1070,10 +1191,31 @@ class SileroTTS:
 
 def transliterate_to_cyrillic(text: str) -> str:
     """Транслитерация латиницы в кириллицу для fallback."""
+    # Названия букв для аббревиатур (без гласных)
+    letter_names = {
+        "a": "эй", "b": "би", "c": "си", "d": "ди", "e": "и",
+        "f": "эф", "g": "джи", "h": "эйч", "i": "ай", "j": "джей",
+        "k": "кей", "l": "эль", "m": "эм", "n": "эн", "o": "оу",
+        "p": "пэ", "q": "кью", "r": "эр", "s": "эс", "t": "ти",
+        "u": "ю", "v": "ви", "w": "дабл ю", "x": "экс", "y": "уай",
+        "z": "зэд",
+        "A": "эй", "B": "би", "C": "си", "D": "ди", "E": "и",
+        "F": "эф", "G": "джи", "H": "эйч", "I": "ай", "J": "джей",
+        "K": "кей", "L": "эль", "M": "эм", "N": "эн", "O": "оу",
+        "P": "пэ", "Q": "кью", "R": "эр", "S": "эс", "T": "ти",
+        "U": "ю", "V": "ви", "W": "дабл ю", "X": "экс", "Y": "уай",
+        "Z": "зэд",
+    }
+    
+    # Обычная транслитерация (для слов с гласными)
     mapping = {
         "a": "а",
         "b": "б",
         "c": "к",
+        "ce": "се",
+        "ci": "си",
+        "cy": "си",
+        "ch": "ч",
         "d": "д",
         "e": "е",
         "f": "ф",
@@ -1082,74 +1224,64 @@ def transliterate_to_cyrillic(text: str) -> str:
         "i": "и",
         "j": "й",
         "k": "к",
+        "kh": "х",
         "l": "л",
         "m": "м",
         "n": "н",
         "o": "о",
         "p": "п",
+        "ph": "ф",
         "q": "к",
         "r": "р",
         "s": "с",
+        "sh": "ш",
         "t": "т",
+        "th": "з",
         "u": "у",
         "v": "в",
         "w": "в",
         "x": "кс",
         "y": "ы",
         "z": "з",
-        "A": "А",
-        "B": "Б",
-        "C": "К",
-        "D": "Д",
-        "E": "Е",
-        "F": "Ф",
-        "G": "Г",
-        "H": "Х",
-        "I": "И",
-        "J": "Й",
-        "K": "К",
-        "L": "Л",
-        "M": "М",
-        "N": "Н",
-        "O": "О",
-        "P": "П",
-        "Q": "К",
-        "R": "Р",
-        "S": "С",
-        "T": "Т",
-        "U": "У",
-        "V": "В",
-        "W": "В",
-        "X": "Кс",
-        "Y": "Ы",
-        "Z": "З",
-        "sh": "ш",
-        "ch": "ч",
-        "th": "з",
-        "ph": "ф",
-        "kh": "х",
-        "Sh": "Ш",
-        "Ch": "Ч",
-        "Th": "З",
-        "Ph": "Ф",
-        "Kh": "Х",
     }
-    result = []
-    i = 0
-    while i < len(text):
-        ch = text[i]
-        if ch.isascii() and ch.isalpha():
-            digraph = text[i : i + 2]
-            if digraph in mapping:
-                result.append(mapping[digraph])
-                i += 2
+    
+    # Разбиваем текст на латинские слова и не-латиницу
+    parts = re.findall(r'[A-Za-z]+|[^A-Za-z]+', text)
+    result_parts = []
+    
+    for part in parts:
+        if re.match(r'^[A-Za-z]+$', part):
+            # Нормализуем к нижнему регистру для транслитерации
+            part_lower = part.lower()
+            
+            # Проверяем, есть ли гласные
+            has_vowels = any(ch in 'aeiou' for ch in part_lower)
+            
+            if has_vowels:
+                # Обычная транслитерация (слово с гласными)
+                result = []
+                i = 0
+                while i < len(part_lower):
+                    ch = part_lower[i]
+                    digraph = part_lower[i : i + 2]
+                    if digraph in mapping:
+                        result.append(mapping[digraph])
+                        i += 2
+                    else:
+                        result.append(mapping.get(ch, ch))
+                        i += 1
+                result_parts.append(''.join(result))
             else:
-                result.append(mapping.get(ch, ch))
-                i += 1
+                # Аббревиатура — произносим по буквам
+                letters = []
+                for ch in part:
+                    if ch.isalpha():
+                        letters.append(letter_names.get(ch, ch))
+                result_parts.append(' '.join(letters))
         else:
-            result.append(ch)
-            i += 1
-    return "".join(result)
+            result_parts.append(part)
+    
+    return ''.join(result_parts)
 
 
 class TTSProcessor:
@@ -1253,6 +1385,13 @@ class TTSProcessor:
         if not text or not text.strip():
             return np.zeros(int(self.sample_rate * 0.1), dtype=np.float32)
         try:
+            # Заменяем скобки на запятые (для естественных пауз Silero)
+            text = text.replace('(', ', ').replace(')', ', ')
+            
+            # Если включен SSML — синтезируем с SSML-паузами
+            if self.config.get("ssml_enabled", False):
+                return self._synthesize_text_with_ssml(text)
+            
             # При force_punctuation: разбиваем текст по знакам препинания
             if self.config.get("force_punctuation", False):
                 return self._synthesize_with_forced_pauses(text)
@@ -1260,6 +1399,8 @@ class TTSProcessor:
             segments = LanguageDetector.split_by_language(text)
             all_audio = []
             for lang, seg_text in segments:
+                # Заменяем <dash> на паузу
+                seg_text = seg_text.replace('<dash>', '')
                 cleaned = TextCleaner.clean_for_tts(seg_text)
                 if not cleaned.strip() or len(cleaned.strip()) < 2:
                     continue
@@ -1311,6 +1452,10 @@ class TTSProcessor:
                         all_audio.append(
                             self.add_silence(self.config.get("pause_comma", 0.05))
                         )
+                    elif '<dash>' in chunk.rstrip()[-10:]:
+                        all_audio.append(
+                            self.add_silence(self.config.get("pause_dash", 0.2))
+                        )
             if all_audio:
                 if len(all_audio) > 1 and all_audio[-1].size < int(
                     self.sample_rate * 0.5
@@ -1326,10 +1471,104 @@ class TTSProcessor:
         audio = self.tts.synthesize(text, "ru", self.service_speaker)
         return audio * self.speaker_gains["ru_service"]
 
+    def _synthesize_text_with_ssml(self, text: str) -> np.ndarray:
+        """Синтезирует текст с паузами через SSML."""
+        if not text or not text.strip():
+            return np.array([], dtype=np.float32)
+        
+        # Определяем паузы из конфига
+        pause_sentence_ms = int(self.config.get("pause_between_sentences", 0.05) * 1000)
+        pause_semicolon_ms = int(self.config.get("pause_semicolon", 0.1) * 1000)
+        pause_colon_ms = int(self.config.get("pause_colon", 0.12) * 1000)
+        pause_comma_ms = int(self.config.get("pause_comma", 0.05) * 1000)
+        pause_dash_ms = int(self.config.get("pause_dash", 0.2) * 1000)
+        
+        # Разбиваем текст на сегменты по языкам
+        segments = LanguageDetector.split_by_language(text)
+        all_audio = []
+        
+        for lang, seg_text in segments:
+            # Заменяем скобки на запятые
+            seg_text = seg_text.replace('(', ', ').replace(')', ', ')
+            cleaned = TextCleaner.clean_for_tts(seg_text)
+            if not cleaned.strip() or len(cleaned.strip()) < 2:
+                continue
+            
+            if lang == self.ext_lang and self.tts.is_model_available(self.ext_lang):
+                # Английский: без SSML, обычный синтез
+                chunks = split_long_text(cleaned, self.max_chunk_length)
+                for chunk in chunks:
+                    audio = self.tts.synthesize(chunk, self.ext_lang, self.ext_speaker)
+                    audio = audio * self.speaker_gains[self.ext_lang]
+                    if len(audio) > 0:
+                        all_audio.append(audio)
+            else:
+                # Русский: вставляем SSML-паузы
+                ssml_text = cleaned
+                ssml_text = ssml_text.replace('; ', f';<break time="{pause_semicolon_ms}ms"/> ')
+                ssml_text = ssml_text.replace(': ', f':<break time="{pause_colon_ms}ms"/> ')
+                ssml_text = ssml_text.replace(', ', f',<break time="{pause_comma_ms}ms"/> ')
+                ssml_text = ssml_text.replace('<dash>', f'<break time="{pause_dash_ms}ms"/>')
+                
+                # Транслитерация латиницы
+                if LanguageDetector.has_latin(ssml_text):
+                    ssml_text = transliterate_to_cyrillic(ssml_text)
+                
+                # Разбиваем на чанки
+                chunks = self._split_ssml_text(ssml_text, self.max_chunk_length)
+                
+                for chunk in chunks:
+                    chunk_ssml = f'<speak>{chunk}</speak>'
+                    audio = self.tts.synthesize_ssml(chunk_ssml, "ru", self.ru_speaker)
+                    audio = audio * self.speaker_gains["ru_main"]
+                    if len(audio) > 0:
+                        all_audio.append(audio)
+        
+        if all_audio:
+            return np.concatenate(all_audio)
+        return np.array([], dtype=np.float32)
+
+    def _split_ssml_text(self, ssml_text: str, max_length: int) -> List[str]:
+        """Разбивает SSML-текст на чанки, не разрезая теги."""
+        if len(ssml_text) <= max_length:
+            return [ssml_text] if ssml_text.strip() else []
+        
+        chunks = []
+        remaining = ssml_text
+        
+        while len(remaining) > max_length:
+            chunk = remaining[:max_length]
+            
+            # Ищем последний закрытый тег </break> в чанке
+            last_break_end = chunk.rfind('</break>')
+            
+            if last_break_end != -1:
+                # Разрезаем после закрытого тега
+                split_pos = last_break_end + len('</break>')
+            else:
+                # Ищем конец предложения
+                split_pos = _find_best_split_position(chunk, max_length)
+                if split_pos <= 0:
+                    split_pos = max_length
+            
+            part = remaining[:split_pos].strip()
+            if part and len(part) >= 2:
+                chunks.append(part)
+            
+            remaining = remaining[split_pos:].strip()
+        
+        if remaining and len(remaining) >= 2:
+            chunks.append(remaining)
+        
+        return chunks
+
     def _synthesize_with_forced_pauses(self, text: str) -> np.ndarray:
         """Синтезирует текст с принудительными паузами по знакам препинания."""
         if not text or not text.strip():
             return np.array([], dtype=np.float32)
+        
+        # Заменяем скобки на запятые (для пауз)
+        text = text.replace('(', ', ').replace(')', ', ')
         
         # Разбиваем текст на сегменты по знакам препинания
         segments = []
@@ -1340,6 +1579,9 @@ class TTSProcessor:
             
             if char == ',':
                 segments.append((current, self.config.get("pause_comma", 0.05)))
+                current = ""
+            elif char == '<dash>':
+                segments.append((current, self.config.get("pause_dash", 0.2)))
                 current = ""
             elif char == ';':
                 segments.append((current, self.config.get("pause_semicolon", 0.1)))
@@ -1356,6 +1598,29 @@ class TTSProcessor:
         
         if current.strip():
             segments.append((current, 0))
+        
+        # Устраняем накопление пауз: оставляем только самую длинную
+        cleaned_segments = []
+        for seg_text, pause_duration in segments:
+            if not seg_text.strip():
+                # Пустой сегмент — только пауза. Проверяем предыдущий.
+                if cleaned_segments and cleaned_segments[-1][1] > 0:
+                    # Предыдущий тоже пустой с паузой — оставляем большую
+                    prev_text, prev_pause = cleaned_segments[-1]
+                    if pause_duration > prev_pause:
+                        cleaned_segments[-1] = (prev_text, pause_duration)
+                    continue
+                else:
+                    # Предыдущий не пустой — добавляем паузу к нему
+                    if cleaned_segments:
+                        prev_text, prev_pause = cleaned_segments[-1]
+                        cleaned_segments[-1] = (prev_text, max(prev_pause, pause_duration))
+                    continue
+            else:
+                # Непустой сегмент
+                cleaned_segments.append((seg_text, pause_duration))
+        
+        segments = cleaned_segments
         
         # Синтезируем каждый сегмент
         all_audio = []
@@ -1407,6 +1672,10 @@ class TTSProcessor:
         if not text or not text.strip():
             return np.array([], dtype=np.float32)
         
+        # Если SSML включен — используем SSML-выделение
+        if self.config.get("ssml_enabled", False):
+            return self._synthesize_emphasis_ssml(text)
+        
         speaker = self.emphasis_speaker or self.ru_speaker
         speed = self.emphasis_speed
         
@@ -1431,6 +1700,45 @@ class TTSProcessor:
             return np.concatenate(result) if len(result) > 1 else audio
         except Exception:
             return np.array([], dtype=np.float32)
+
+    def _synthesize_emphasis_ssml(self, text: str) -> np.ndarray:
+        """Синтезирует курсив с выделением через SSML (prosody rate/pitch)."""
+        if not text or not text.strip():
+            return np.array([], dtype=np.float32)
+        
+        # Определяем скорость для emphasis
+        speed = self.emphasis_speed
+        rate_map = {
+            0.25: "x-slow",
+            0.5: "slow",
+            0.75: "slow",
+            1.0: "medium",
+            1.25: "fast",
+            1.5: "fast",
+            2.0: "x-fast",
+        }
+        rate = rate_map.get(speed, "medium")
+        
+        # Определяем тон
+        pitch = self.config.get("emphasis_pitch", "medium")
+        
+        # Определяем паузы
+        pause_before_ms = int(self.emphasis_pause_before * 1000)
+        pause_after_ms = int(self.emphasis_pause_after * 1000)
+        
+        # Формируем SSML
+        ssml_parts = []
+        if pause_before_ms > 0:
+            ssml_parts.append(f'<break time="{pause_before_ms}ms"/>')
+        ssml_parts.append(f'<prosody rate="{rate}" pitch="{pitch}">{text}</prosody>')
+        if pause_after_ms > 0:
+            ssml_parts.append(f'<break time="{pause_after_ms}ms"/>')
+        
+        ssml_text = f'<speak>{"".join(ssml_parts)}</speak>'
+        
+        # Синтезируем основным голосом
+        audio = self.tts.synthesize_ssml(ssml_text, "ru", self.ru_speaker)
+        return audio * self.speaker_gains["ru_main"]
 
     def add_silence(self, duration: float = 0.3) -> np.ndarray:
         """Создаёт тишину заданной длительности."""
@@ -1567,6 +1875,7 @@ class TTSProcessor:
         
         merged = []
         i = 0
+        last_was_pause = False
         
         while i < len(blocks):
             block = blocks[i]
@@ -1586,6 +1895,7 @@ class TTSProcessor:
                 # Проверяем, можно ли объединить с предыдущим
                 if (merged and 
                     merged[-1]["type"] == "text" and
+                    not last_was_pause and
                     not merged[-1]["content"].rstrip().endswith(('.', '!', '?', '…'))):
                     
                     # Объединяем с предыдущим текстовым блоком
@@ -1600,6 +1910,7 @@ class TTSProcessor:
                         separator = " "
                     
                     merged[-1]["content"] = prev_text + separator + curr_text
+                    last_was_pause = False
                     i += 1
                     continue
                 
@@ -1611,7 +1922,9 @@ class TTSProcessor:
                     continue
                 
                 # Проверяем, можно ли объединить со следующим текстовым блоком
-                if i + 1 < len(blocks) and blocks[i + 1]["type"] == "text":
+                if (i + 1 < len(blocks) and 
+                    blocks[i + 1]["type"] == "text" and
+                    (i + 2 >= len(blocks) or blocks[i + 2]["type"] != "pause")):
                     next_block = blocks[i + 1]
                     curr_text = block["content"].strip()
                     next_text = next_block["content"].strip()
@@ -1627,10 +1940,12 @@ class TTSProcessor:
                         "type": "text",
                         "content": curr_text + separator + next_text
                     })
+                    last_was_pause = False
                     i += 2
                     continue
             
             # Обычный блок
+            last_was_pause = (block["type"] == "pause")
             merged.append(block)
             i += 1
         
@@ -1734,6 +2049,9 @@ class FB2ToAudioConverter:
 
         parser = FB2Parser(input_file)
         parser.force_punctuation = self.config.get("force_punctuation", False)
+        parser.pause_between_subsections = self.config.get("pause_between_subsections", 0.8)
+        parser.annotation_prefix = self.config.get("annotation_prefix", "Аннотация")
+        parser.annotation_suffix = self.config.get("annotation_suffix", "Конец аннотации")
         chapters = parser.parse()
         if not chapters:
             logger.error("Не удалось извлечь текст")
@@ -1922,10 +2240,10 @@ def print_header(
         f"{BOLD}{CYAN}║{RESET} {GREEN}Частота:{RESET} {v(str(config.get('sample_rate', 48000))+' Гц')}  {GREEN}Скор.:{RESET} {v(str(speed)+'x')}   {GREEN}Громк.:{RESET} {v(str(loudness)+' LUFS' if loudness else 'без')}\n"
     )
     sys.stderr.write(
-        f"{BOLD}{CYAN}║{RESET} {GREEN}Чанк:{RESET} {v(str(config.get('max_chunk_length', 900))+' симв.')}    {GREEN}Сноски:{RESET} {v('пропущены' if skip_fn else 'озвучены')}\n"
+        f"{BOLD}{CYAN}║{RESET} {GREEN}SSML:{RESET} {v('вкл' if config.get('ssml_enabled', False) else 'выкл')}    {GREEN}Сноски:{RESET} {v('пропущены' if skip_fn else 'озвучены')}"
     )
     sys.stderr.write(
-        f"{BOLD}{CYAN}║{RESET} {GREEN}Курсив:{RESET} {v('не выделен' if emphasis_as_text else 'выделен')}\n"
+        f"    {GREEN}Курсив:{RESET} {v('не выделен' if emphasis_as_text else 'выделен')}\n"
     )
     sys.stderr.write(
         f"{BOLD}{CYAN}╚══════════════════════════════════════════════════════════════╝{RESET}\n"
@@ -2001,6 +2319,8 @@ def dry_run(input_file: str, config: dict):
     print(f"\n{BOLD}{CYAN}DRY RUN: проверка текста{RESET}\n")
 
     parser = FB2Parser(input_file)
+    parser.force_punctuation = config.get("force_punctuation", False)
+    parser.pause_between_subsections = config.get("pause_between_subsections", 0.8)
     chapters = parser.parse()
 
     if not chapters:
@@ -2015,6 +2335,8 @@ def dry_run(input_file: str, config: dict):
 
     for i, chapter in enumerate(chapters, 1):
         print(f"\n{BOLD}Глава {i}:{RESET} {len(chapter)} блоков")
+        if i > 1:
+            print(f"  ⏸  Пауза между главами: {config.get('pause_between_chapters', 1.5)}с")
         for block in chapter:
             total_blocks += 1
             if block["type"] == "text":

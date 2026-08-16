@@ -13,6 +13,16 @@ ru_speaker: "eugene"
 service_speaker: "kseniya" # фразы сносок и окончания текста
 en_speaker: "en_102"
 
+
+# =============================================================================
+# Авто-ударения и буква ё
+# Ручные ударения (формат +гласная или гла́сная) предположительно всегда имеют приоритет
+# =============================================================================
+put_accent: true           # авто-ударения для слов без разметки
+put_yo: false              # авто-расстановка ё
+put_stress_homo: false     # авто-ударения для омографов (замок/замок)
+put_yo_homo: false         # авто-ё для омографов
+
 # =============================================================================
 # Аудио
 # =============================================================================
@@ -30,12 +40,17 @@ en_speed: 0.95
 # =============================================================================
 # Паузы
 # =============================================================================
-pause_between_sentences: 0.35
 force_punctuation: false  # true = принудительные паузы по знакам, false = Silero расставит паузы внутри чанков
+ssml_enabled: true        # true = паузы через SSML, false = программные паузы.
+
+pause_between_chapters: 1.5
+pause_between_subsections: 0.8
+pause_between_paragraphs: 0.60
+pause_between_sentences: 0.35
 pause_semicolon: 0.15
 pause_colon: 0.1
-pause_between_paragraphs: 0.60
-pause_between_chapters: 1.5
+pause_dash: 0.2
+pause_comma: 0.05
 en_pause_before: 0.1
 en_pause_after: 0.1
 
@@ -43,11 +58,12 @@ en_pause_after: 0.1
 # Курсив (внутри тэгов <emphasis>)
 # =============================================================================
 emphasis_as_text: true    # true = как обычный текст, false = выделять голосом и паузами
-# Если emphasis_as_text: true , то 4 параметра ниже игнорируются
-emphasis_speaker: "eugene" # "голос" или null = выделение только паузами (если они есть)
+# Если emphasis_as_text: true , то 4 параметра ниже игнорируются ssml_enabled: false
+emphasis_speaker: "eugene" # "голос; только при ssml_enabled: false
 emphasis_speed: 1.00
-emphasis_pause_before: 0
-emphasis_pause_after: 0
+emphasis_pitch: "high" # x-low, low, medium, high, x-high (только при ssml_enabled: true)
+emphasis_pause_before: 0.1
+emphasis_pause_after: 0.1
 
 # =============================================================================
 # Сноски
