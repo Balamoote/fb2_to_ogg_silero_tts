@@ -1230,7 +1230,7 @@ def normalize_alphanumeric(words: list, gaps: list) -> tuple:
         if (
             len(w) == 1
             and w[0].isalpha()
-            and w.lower() not in ("в",)
+            and w != "в"
             and w not in "IVXLCDM"
             and gaps[i + 1].startswith(".")
             and not (
@@ -1356,7 +1356,7 @@ def restore_protected(text: str, protected: List[str]) -> str:
 
 # --- Шаг 21: Спецсимволы ---
 def normalize_symbols(text: str) -> str:
-    for sym, word in SYMBOLS.items():
+    for sym, word in sorted(SYMBOLS.items(), key=lambda x: len(x[0]), reverse=True):
         text = text.replace(sym, " " + word + " ")
     return re.sub(r" {2,}", " ", text)
 
